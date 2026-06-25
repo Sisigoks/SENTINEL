@@ -20,6 +20,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+from tqdm.auto import tqdm
 
 from . import viz
 from .core.logging import get_logger
@@ -58,6 +59,18 @@ def _context_dim(agent) -> int:
     return 6 + int(res)
 
 
+def _build_phase_list(cfg: dict) -> list[str]:
+    phases = ["adversarial grid"]
+    if cfg["experiment"].get("run_evolution"):
+        phases.append("defensive evolution")
+    if cfg["experiment"].get("run_ablation"):
+        phases.append("ablation")
+    if cfg["experiment"].get("run_robustness"):
+        phases.append("robustness suite")
+    phases += ["cross-threat transfer", "utility / tradeoff", "statistics", "figures + manifest"]
+    return phases
+
+
 def run_all(
     backend: ModelBackend, encoder: FrozenEncoder, corpus: ProbeCorpus, cfg: dict, out_dir: str
 ) -> dict:
@@ -68,25 +81,38 @@ def run_all(
 
     results: dict = {"model": backend.model_name, "conditions": {}, "stats": {}}
 
+    phases = _build_phase_list(cfg)
+    master = tqdm(total=len(phases), desc=f"SENTINEL | {backend.model_name}", unit="phase",
+                  position=0, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} phases [{elapsed}]")
+
+    def _phase(name: str) -> None:
+        master.set_description(f"SENTINEL | {backend.model_name} | {name}")
+
     # ---- 1. adversarial grid over conditions x seeds --------------------
+    _phase("adversarial grid")
     seeds = cfg["experiment"]["seeds"]
     window = cfg["experiment"]["window"]
+    conditions = cfg["experiment"]["conditions"]
     curves: dict[str, list[float]] = {}
     aulc_samples: dict[str, list[float]] = defaultdict(list)
     final_asr_samples: dict[str, list[float]] = defaultdict(list)
     recall_by_cond: dict[str, float] = {}
 
-    for cond_name in cfg["experiment"]["conditions"]:
+    grid_bar = tqdm(total=len(conditions) * len(seeds), desc="adversarial grid",
+                    unit="run", position=1, leave=False)
+    for cond_name in conditions:
         per_seed_curves = []
         for seed in seeds:
             agent = build_agent(backend, encoder, corpus, seed=seed)
             cond = build_condition(cond_name, _context_dim(agent), seed=seed)
             run = grids.run_adversarial(agent, cond, corpus, model_name=backend.model_name,
-                                        seed=seed, window=window)
+                                        seed=seed, window=window, progress_position=2)
             per_seed_curves.append(run.asr_curve)
             aulc_samples[cond_name].append(run.asr_aulc)
             final_asr_samples[cond_name].append(run.final_asr)
             recall_by_cond[cond_name] = detection_recall(run.detection_true, run.detection_pred)
+            grid_bar.update(1)
+            grid_bar.set_postfix(cond=cond_name, final_ASR=f"{run.final_asr:.2f}")
         # average curve across seeds (align to min length)
         L = min(len(c) for c in per_seed_curves)
         curves[cond_name] = list(np.mean([c[:L] for c in per_seed_curves], axis=0))
@@ -95,48 +121,72 @@ def run_all(
             "final_asr_mean": float(np.mean(final_asr_samples[cond_name])),
             "detection_recall": recall_by_cond[cond_name],
         }
-
+    grid_bar.close()
     viz.plot_asr_curves(curves, fig_dir)
+    master.update(1)
 
     # ---- 2. evolution loop (human-gated) on FullSENTINEL ---------------
     if cfg["experiment"].get("run_evolution"):
+        _phase("defensive evolution")
         results["evolution"] = _run_evolution(backend, encoder, corpus, cfg, fig_dir)
+        master.update(1)
 
     # ---- 3. ablation ----------------------------------------------------
     if cfg["experiment"].get("run_ablation"):
+        _phase("ablation")
         results["ablation"] = _run_ablation(backend, encoder, corpus, window, fig_dir)
+        master.update(1)
 
     # ---- 4. robustness --------------------------------------------------
     if cfg["experiment"].get("run_robustness"):
+        _phase("robustness suite")
         agent = build_agent(backend, encoder, corpus, seed=0)
         cond = build_condition("full_sentinel", _context_dim(agent))
-        results["robustness"] = {
-            "multi_turn": [r.__dict__ for r in multi_turn(agent, cond, corpus)],
-            "context_length": [r.__dict__ for r in context_length(agent, cond, corpus)],
-            "channels": [r.__dict__ for r in channel_robustness(agent, cond, corpus)],
-        }
+        rob_steps = ["multi_turn", "context_length", "channels"]
+        rob_bar = tqdm(rob_steps, desc="robustness", unit="study", position=1, leave=False)
+        results["robustness"] = {}
+        for step in rob_bar:
+            rob_bar.set_postfix(study=step)
+            if step == "multi_turn":
+                results["robustness"][step] = [r.__dict__ for r in multi_turn(agent, cond, corpus)]
+            elif step == "context_length":
+                results["robustness"][step] = [r.__dict__ for r in context_length(agent, cond, corpus)]
+            else:
+                results["robustness"][step] = [r.__dict__ for r in channel_robustness(agent, cond, corpus)]
+        rob_bar.close()
+        master.update(1)
 
     # ---- 5. cross-threat transfer (leave-one-class-out) ----------------
+    _phase("cross-threat transfer")
     results["cross_threat_transfer"] = _cross_threat_transfer(backend, encoder, corpus, window)
+    master.update(1)
 
     # ---- 6. utility + security-utility tradeoff ------------------------
+    _phase("utility / tradeoff")
     util_points = {}
-    for cond_name in cfg["experiment"]["conditions"]:
+    util_bar = tqdm(conditions, desc="clean-task utility", unit="cond", position=1, leave=False)
+    for cond_name in util_bar:
+        util_bar.set_postfix(cond=cond_name)
         agent = build_agent(backend, encoder, corpus, seed=0)
         cond = build_condition(cond_name, _context_dim(agent))
         util = grids.run_clean(agent, cond, CLEAN_TASKS, model_name=backend.model_name)
         sec = 1.0 - results["conditions"][cond_name]["final_asr_mean"]
         util_points[cond_name] = (util, sec)
+    util_bar.close()
     viz.plot_security_utility_pareto(util_points, fig_dir)
     vanilla_asr = results["conditions"]["vanilla"]["final_asr_mean"]
     full_asr = results["conditions"]["full_sentinel"]["final_asr_mean"]
     util_loss = max(util_points["vanilla"][0] - util_points["full_sentinel"][0], 0.0)
     results["security_utility_tradeoff"] = security_utility_tradeoff(vanilla_asr - full_asr, util_loss)
+    master.update(1)
 
     # ---- 7. statistics --------------------------------------------------
+    _phase("statistics")
     results["stats"] = _statistics(final_asr_samples, aulc_samples)
+    master.update(1)
 
-    # manifest + dump
+    # ---- 8. figures + reproducibility manifest -------------------------
+    _phase("figures + manifest")
     manifest = RunManifest(
         run_id=Path(out_dir).name, seed=cfg.get("seed", 0), config=cfg,
         dataset_hash=RunManifest.hash_dataset([p.provenance_hash for p in corpus.probes]),
@@ -144,7 +194,9 @@ def run_all(
     )
     manifest.save(out / "manifest.json")
     (out / "results.json").write_text(json.dumps(results, indent=2, default=str))
-    log.info("experiment complete", out=str(out))
+    master.update(1)
+    master.close()
+    log.info("experiment complete", out=str(out), figures=str(fig_dir))
     return results
 
 
@@ -181,10 +233,17 @@ def _run_evolution(backend, encoder, corpus, cfg, fig_dir) -> dict:
     )
     rng = np.random.default_rng(0)
     engine.initialize([random_seed_genome(rng, n=k) for k in (1, 2, 3, 1, 2)])
-    for _ in range(cfg["evolution"]["generations"]):
+    gen_bar = tqdm(range(cfg["evolution"]["generations"]), desc="evolution generations",
+                   unit="gen", position=1, leave=False)
+    for _ in gen_bar:
         engine.step(priors=full.selector.posteriors())
+        if engine.history:
+            gen_bar.set_postfix(best_ASR=f"{engine.history[-1]['best_asr']:.2f}",
+                                coverage=f"{engine.archive.coverage():.2f}")
         if engine.converged():
+            gen_bar.set_description("evolution generations (converged)")
             break
+    gen_bar.close()
     viz.plot_defense_evolution(engine.history, fig_dir)
     viz.plot_stability(engine.history, fig_dir)
     best = engine.archive.best()

@@ -1,8 +1,13 @@
 # Mistral-Small via vLLM (paper §6.2 model family 3).
+# Uses the HF-format instruct repo (standard tokenizer). If you switch to a repo that
+# ships only Mistral's native tokenizer, set tokenizer_mode: mistral.
+# 24B in FP16 exceeds a 40GB A100 — prefer an AWQ repo for the full grid.
 kind: vllm
 model_name: mistralai/Mistral-Small-Instruct-2409
-quantization: awq
+quantization: null        # auto-detect; substitute an AWQ repo to fit smaller GPUs
 max_model_len: 8192
-gpu_memory_utilization: 0.90
+gpu_memory_utilization: 0.92
 dtype: auto
+tokenizer_mode: auto      # set to "mistral" only for native-tokenizer repos
+trust_remote_code: false
 seed: 0

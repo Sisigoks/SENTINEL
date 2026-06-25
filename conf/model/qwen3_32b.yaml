@@ -1,8 +1,11 @@
-# Qwen3-32B via vLLM batched — scale check (paper §6.2, Table 7 robustness path).
+# Qwen3-32B-AWQ via vLLM batched — scale check (paper §6.2, Table 7 robustness path).
+# quantization auto-detected from config.json (AWQ). Needs an A100/H100-class GPU.
 kind: vllm
 model_name: Qwen/Qwen3-32B-AWQ
-quantization: awq
+quantization: null        # auto-detect (config.json declares AWQ)
 max_model_len: 8192
 gpu_memory_utilization: 0.92
 dtype: auto
+tokenizer_mode: auto
+trust_remote_code: false
 seed: 0

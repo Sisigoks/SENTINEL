@@ -55,32 +55,79 @@ class ModelBackend(ABC):
 
 
 class VLLMBackend(ModelBackend):
-    """In-process vLLM engine. Loads local quantized weights and serves batched."""
+    """In-process vLLM engine. Loads local (optionally quantized) weights and serves batched.
+
+    Robustness choices (see docs/02-troubleshooting.md):
+      * ``quantization=None`` (default) lets vLLM auto-detect AWQ/GPTQ from the model's
+        ``config.json`` — passing ``quantization='awq'`` to a non-AWQ repo is a common crash.
+      * ``tokenizer_mode`` / ``trust_remote_code`` are config-driven for model-specific needs
+        (e.g. Mistral's native tokenizer).
+      * Known vLLM<->transformers tokenizer skews are patched before engine init.
+      * Engine-init failures raise an actionable error instead of a raw stack trace.
+    """
 
     def __init__(
         self,
         model_name: str,
         *,
-        quantization: str | None = "awq",
+        quantization: str | None = None,
         max_model_len: int = 8192,
         gpu_memory_utilization: float = 0.90,
         dtype: str = "auto",
         seed: int = 0,
+        tokenizer_mode: str = "auto",
+        trust_remote_code: bool = False,
+        enforce_eager: bool = False,
+        show_progress: bool = False,
     ) -> None:
+        from .compat import apply_model_compat_patches
+
+        apply_model_compat_patches()  # patch known tokenizer/version skews first
         from vllm import LLM  # imported lazily so non-GPU tooling can import the module
 
         self.model_name = model_name
-        self._tokenizer_template = True
-        log.info("loading vllm", model=model_name, quantization=quantization)
-        self._llm = LLM(
-            model=model_name,
-            quantization=quantization,
-            max_model_len=max_model_len,
-            gpu_memory_utilization=gpu_memory_utilization,
-            dtype=dtype,
-            seed=seed,
-            enforce_eager=False,
-        )
+        self._show_progress = show_progress
+        # Empty string / "auto"-ish values -> None so vLLM auto-detects from config.json.
+        quant = quantization if quantization not in (None, "", "none", "auto") else None
+        log.info("loading vllm", model=model_name, quantization=quant or "auto-detect",
+                 max_model_len=max_model_len)
+        try:
+            self._llm = LLM(
+                model=model_name,
+                quantization=quant,
+                max_model_len=max_model_len,
+                gpu_memory_utilization=gpu_memory_utilization,
+                dtype=dtype,
+                seed=seed,
+                tokenizer_mode=tokenizer_mode,
+                trust_remote_code=trust_remote_code,
+                enforce_eager=enforce_eager,
+            )
+        except Exception as exc:  # surface an actionable message
+            raise RuntimeError(self._diagnose(exc, model_name)) from exc
+
+    @staticmethod
+    def _diagnose(exc: Exception, model_name: str) -> str:
+        msg = str(exc)
+        hints: list[str] = []
+        low = msg.lower()
+        if "all_special_tokens_extended" in msg:
+            hints.append("transformers<->vLLM tokenizer skew: pin transformers to a vLLM-compatible "
+                         "version (see docs/02-troubleshooting.md). A runtime shim is applied "
+                         "automatically; if you still see this, the pin is required.")
+        if "out of memory" in low or "kv cache" in low or "no available memory" in low:
+            hints.append("GPU OOM: lower max_model_len (e.g. 4096) and/or gpu_memory_utilization "
+                         "(e.g. 0.80), or use a smaller / AWQ-quantized model.")
+        if "quantization" in low or "awq" in low or "gptq" in low:
+            hints.append("Quantization mismatch: leave quantization unset (null) so vLLM auto-detects "
+                         "from the model config, or point at an AWQ/GPTQ repo.")
+        if "mistral" in model_name.lower():
+            hints.append("Mistral models may need tokenizer_mode=mistral in the model config.")
+        if "compute capability" in low or "not supported" in low:
+            hints.append("This GPU may be pre-Ampere (CC<8.0); vLLM falls back to the V0 engine. "
+                         "AWQ needs CC>=7.5. Prefer an A100/L4/H100 for the full grid.")
+        joined = "\n  - ".join(hints) if hints else "(no specific hint matched)"
+        return f"vLLM failed to load {model_name!r}: {msg}\nLikely fixes:\n  - {joined}"
 
     def _params(self, cfg: GenerationConfig):
         from vllm import SamplingParams
@@ -97,7 +144,9 @@ class VLLMBackend(ModelBackend):
         return self.generate_batch([prompt], cfg)[0]
 
     def generate_batch(self, prompts: list[str], cfg: GenerationConfig) -> list[Generation]:
-        outs = self._llm.generate(prompts, self._params(cfg))
+        # vLLM's own bar is noisy for the per-probe (size-1) calls SENTINEL makes; gate it.
+        use_tqdm = self._show_progress and len(prompts) > 1
+        outs = self._llm.generate(prompts, self._params(cfg), use_tqdm=use_tqdm)
         results: list[Generation] = []
         for o in outs:
             comp = o.outputs[0]
@@ -163,11 +212,15 @@ def build_backend(cfg: dict) -> ModelBackend:
     if kind == "vllm":
         return VLLMBackend(
             model_name=cfg["model_name"],
-            quantization=cfg.get("quantization", "awq"),
+            quantization=cfg.get("quantization", None),
             max_model_len=cfg.get("max_model_len", 8192),
             gpu_memory_utilization=cfg.get("gpu_memory_utilization", 0.90),
             dtype=cfg.get("dtype", "auto"),
             seed=cfg.get("seed", 0),
+            tokenizer_mode=cfg.get("tokenizer_mode", "auto"),
+            trust_remote_code=cfg.get("trust_remote_code", False),
+            enforce_eager=cfg.get("enforce_eager", False),
+            show_progress=cfg.get("show_progress", False),
         )
     if kind == "openai_compat":
         return OpenAICompatBackend(

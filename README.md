@@ -54,6 +54,18 @@ DeepSeek-R1-Distill-14B, Mistral-Small, Qwen3-32B) — no call-site changes.
 pip install -e ".[dev]"          # pulls torch, vllm, sentence-transformers, ...
 ```
 
+### Google Colab / Lightning AI
+
+```bash
+!bash scripts/colab_setup.sh      # pins a vLLM<->transformers combo that avoids known crashes
+%env HF_TOKEN=hf_xxx              # faster / gated downloads
+!sentinel run model=qwen3_14b
+```
+
+`colab_setup.sh` installs a tested serving stack and prints your GPU's compute capability
+(the full grid needs an A100/L4/H100; a T4 works only for a smoke run). If a model fails to
+load, the error prints an actionable hint — see [docs/02-troubleshooting.md](docs/02-troubleshooting.md).
+
 ### Run the full study
 
 ```bash
@@ -65,6 +77,13 @@ This runs the adversarial grid (5 conditions × seeds), the human-gated evolutio
 ablations, the robustness suite (multi-turn / context-length / channel poisoning),
 cross-threat transfer, the full statistics battery, and writes publication figures +
 a reproducibility manifest to `experiments/runs/<model>/`.
+
+**Live progress.** The run shows nested progress bars (via `tqdm.auto`, which renders as real
+bars in Colab): a top-level **phase** bar (adversarial grid → evolution → ablation → robustness
+→ transfer → utility → statistics → figures), a per-condition×seed bar, and an inner per-probe
+bar with running ASR/recall so you can watch the agent harden in real time. First, try the
+**smoke run** in [docs/02-troubleshooting.md](docs/02-troubleshooting.md#quick-smoke-run-verify-the-whole-pipeline-end-to-end-cheaply)
+to confirm the model loads before committing GPU hours.
 
 > **Figures and results come ONLY from real model runs.** There is no synthetic/CPU path
 > that fabricates graphs — `sentinel run` on the A100 measures ASR/recall/etc. from the actual

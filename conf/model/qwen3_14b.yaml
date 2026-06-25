@@ -1,8 +1,12 @@
-# Qwen3-14B served via vLLM on the A100 (paper's recommended primary path, Table 7).
+# Qwen3-14B-AWQ served via vLLM (paper's recommended primary path, Table 7).
+# quantization is left unset so vLLM auto-detects AWQ from the model's config.json —
+# this avoids the "model is not AWQ" class of crashes (see docs/02-troubleshooting.md).
 kind: vllm
 model_name: Qwen/Qwen3-14B-AWQ
-quantization: awq
+quantization: null        # auto-detect (config.json declares AWQ)
 max_model_len: 8192
 gpu_memory_utilization: 0.90
 dtype: auto
+tokenizer_mode: auto
+trust_remote_code: false
 seed: 0

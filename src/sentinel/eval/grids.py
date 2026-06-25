@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass, field
 
 import numpy as np
+from tqdm.auto import tqdm
 
 from ..agent import SentinelAgent
 from ..core.logging import get_logger
@@ -45,6 +46,8 @@ def run_adversarial(
     seed: int = 0,
     window: int = 12,
     shuffle: bool = True,
+    progress: bool = True,
+    progress_position: int = 1,
 ) -> ConditionRun:
     """Stream probes through the condition, recording windowed ASR (the learning curve)."""
     rng = np.random.default_rng(seed)
@@ -54,7 +57,11 @@ def run_adversarial(
     run = ConditionRun(condition=condition.name, model=model_name, seed=seed)
     t0 = time.time()
     window_succ: list[bool] = []
-    for cycle, i in enumerate(order):
+    bar = tqdm(
+        enumerate(order), total=len(order), disable=not progress, leave=False,
+        position=progress_position, desc=f"  ↳ {condition.name} seed={seed}", unit="probe",
+    )
+    for cycle, i in bar:
         probe = probes[i]
         event, outcome = agent.run_probe(probe, condition, cycle)
         run.per_probe_success.append(outcome.attack_succeeded)
@@ -62,9 +69,14 @@ def run_adversarial(
         run.detection_true.append(True)  # every probe is a real attack
         run.tokens += outcome.tokens
         window_succ.append(outcome.attack_succeeded)
+        # live running ASR + detection so you can watch hardening happen
+        running_asr = asr(run.per_probe_success)
+        running_rec = sum(run.detection_pred) / max(len(run.detection_pred), 1)
+        bar.set_postfix(ASR=f"{running_asr:.2f}", recall=f"{running_rec:.2f}", refresh=False)
         if len(window_succ) >= window:
             run.asr_curve.append(asr(window_succ))
             window_succ = []
+    bar.close()
     if window_succ:
         run.asr_curve.append(asr(window_succ))
 
