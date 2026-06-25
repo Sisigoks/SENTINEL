@@ -66,22 +66,22 @@ ablations, the robustness suite (multi-turn / context-length / channel poisoning
 cross-threat transfer, the full statistics battery, and writes publication figures +
 a reproducibility manifest to `experiments/runs/<model>/`.
 
-## Reproduce the analysis pipeline without a GPU
+> **Figures and results come ONLY from real model runs.** There is no synthetic/CPU path
+> that fabricates graphs — `sentinel run` on the A100 measures ASR/recall/etc. from the actual
+> models and feeds them through the metric → stats → figure pipeline. Figures are written as
+> PNG (300 DPI) to `experiments/runs/<model>/figures/`.
 
-The GPU-independent stack (graph, bandit, NSGA-II/MAP-Elites evolution, metrics,
-statistics, figures) is fully tested and runnable on CPU:
+## Logic tests (no GPU, no fabricated data)
+
+The unit suite verifies the *logic* of the GPU-independent components (safety invariants,
+NSGA-II dominance, bandit updates, threat-graph queries, metric math, statistics) using
+synthetic arrays as test fixtures only — it never produces figures or paper artifacts:
 
 ```bash
 pip install numpy scipy scikit-learn matplotlib networkx pydantic \
             structlog omegaconf statsmodels pandas pytest
-pytest tests/                       # 28 tests, incl. safety invariants
-python experiments/smoke_test_pipeline.py   # checks the figure/stats/evolution code runs
+pytest tests/                       # safety invariants + component logic
 ```
-
-> **Smoke test only.** `smoke_test_pipeline.py` feeds **fake placeholder numbers** through
-> the plotting/stats code to confirm it runs — its output is NOT data and must not appear in
-> the paper. Real, paper-grade figures come only from `sentinel run` on the A100. Figures save
-> as vector PDF (set `sentinel.viz.figures.SAVE_PNG=True` for raster previews).
 
 ## Metrics (four research dimensions)
 

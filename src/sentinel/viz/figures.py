@@ -43,18 +43,13 @@ def set_paper_style() -> None:
     )
 
 
-# Vector PDF is the paper format. Set SAVE_PNG=True only if you want raster previews.
-SAVE_PNG = False
-
-
 def _save(fig, out: Path, name: str) -> Path:
+    # PNG only, at 300 DPI (set in set_paper_style) — publication-quality raster.
     out.mkdir(parents=True, exist_ok=True)
-    pdf = out / f"{name}.pdf"
-    fig.savefig(pdf, bbox_inches="tight")
-    if SAVE_PNG:
-        fig.savefig(out / f"{name}.png", bbox_inches="tight")
+    png = out / f"{name}.png"
+    fig.savefig(png, bbox_inches="tight")
     plt.close(fig)
-    return pdf
+    return png
 
 
 def plot_asr_curves(
