@@ -141,7 +141,26 @@ sentinel run model=qwen3_14b encoder.device=cpu
 
 ---
 
-## 9. `trust_remote_code` required
+## 9. `Requesting 3-fold cross-validation but provided less than 3 examples`
+
+```
+ValueError: Requesting 3-fold cross-validation but provided less than 3 examples
+            for at least one class.
+  ... CalibratedClassifierCV ... classifier.py
+```
+
+**Cause.** A tiny corpus (e.g. `corpus.repeat=2`) gives fewer samples per class than the
+calibration folds. **Fixed** — the classifier now adapts the fold count to the smallest
+class and falls back to an *uncalibrated* head when there are too few samples, so both the
+smoke run and the full grid work. (Also removed `multi_class="multinomial"`, which sklearn
+≥1.7 dropped.) No action needed; for meaningful calibration use the full corpus (`repeat=60`).
+
+Related: with a **single seed** (`experiment.seeds=[0]`) effect sizes / significance tests are
+undefined and are skipped with a note — use ≥2 seeds (the default is `[0,1,2]`) for statistics.
+
+---
+
+## 10. `trust_remote_code` required
 
 A few repos need custom modeling code. Set per-model:
 ```yaml

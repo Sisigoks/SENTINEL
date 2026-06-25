@@ -312,8 +312,13 @@ def _statistics(final_asr_samples: dict, aulc_samples: dict) -> dict:
             stats_out["aulc_ci"][cond] = {"mean": r.mean, "ci": [r.ci_low, r.ci_high]}
     base = final_asr_samples.get("vanilla", [])
     pvals, names = [], []
+    # Effect sizes / t-tests need >=2 samples per group; with a single seed (smoke runs)
+    # they are undefined, so we skip them and report only the bootstrap means.
+    if len(base) < 2:
+        stats_out["note"] = "effect-size/significance skipped: need >=2 seeds per condition"
+        return stats_out
     for cond, samples in final_asr_samples.items():
-        if cond == "vanilla" or not base or not samples:
+        if cond == "vanilla" or not base or len(samples) < 2:
             continue
         d = st.cohens_d(base, samples)
         g = st.hedges_g(base, samples)

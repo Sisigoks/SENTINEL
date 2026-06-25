@@ -17,6 +17,9 @@ import numpy as np
 
 from ..core.types import ThreatClass
 
+# numpy 2.0 renamed np.trapz -> np.trapezoid (np.trapz deprecated). Support both.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 
 # --------------------------------------------------------------- D1: security
 def asr(successes: list[bool]) -> float:
@@ -32,7 +35,7 @@ def asr_aulc(asr_curve: list[float]) -> float:
     if len(asr_curve) < 2:
         return float(asr_curve[0]) if asr_curve else 0.0
     x = np.linspace(0.0, 1.0, len(asr_curve))
-    return float(np.trapz(asr_curve, x))
+    return float(_trapezoid(asr_curve, x))
 
 
 def time_to_hardening(asr_curve: list[float], thresholds=(0.5, 0.25, 0.10, 0.05)) -> dict[float, int | None]:

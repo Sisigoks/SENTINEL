@@ -14,29 +14,74 @@ Output: an OWASP ``ThreatClass`` (or BENIGN) plus a calibrated probability.
 
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 
+from ..core.logging import get_logger
 from ..core.types import CascadeStage, StageResult, ThreatClass
+
+log = get_logger(__name__)
 
 _CLASSES: list[str] = ["BENIGN", *[c.value for c in ThreatClass]]
 
 
 class NeuralThreatClassifier:
-    """One-vs-rest calibrated classifier over OWASP classes + BENIGN."""
+    """Multinomial logistic head over OWASP classes + BENIGN, calibrated when the data
+    supports it.
+
+    Calibration (``CalibratedClassifierCV``) needs >= cv samples per class. We adapt the
+    number of folds to the smallest class count and fall back to an *uncalibrated* head
+    when there are too few samples (e.g. tiny smoke-test corpora). This keeps both the
+    smoke run (``corpus.repeat=2``) and the full grid (60/class) working without crashing.
+    Note: sklearn >=1.7 removed ``multi_class`` from LogisticRegression (multinomial is the
+    default for multiclass), so it is not passed.
+    """
 
     def __init__(self, c: float = 1.0, random_state: int = 0) -> None:
-        base = LogisticRegression(
-            C=c, max_iter=2000, multi_class="multinomial", class_weight="balanced"
-        )
-        self._clf = CalibratedClassifierCV(base, method="isotonic", cv=3)
+        self._c = c
+        self._random_state = random_state
+        self._clf: CalibratedClassifierCV | LogisticRegression | None = None
         self._labels: list[str] = []
         self._fitted = False
 
+    def _model(self):
+        """The fitted estimator (calibrated or raw). Raises if not yet fit."""
+        if self._clf is None:
+            raise RuntimeError("classifier must be fit before use")
+        return self._clf
+
+    def _base(self) -> LogisticRegression:
+        return LogisticRegression(
+            C=self._c, max_iter=2000, class_weight="balanced", random_state=self._random_state
+        )
+
     def fit(self, embeddings: np.ndarray, labels: list[str]) -> None:
         x = np.asarray(embeddings, dtype=np.float64)
-        self._clf.fit(x, labels)
+        min_count = min(Counter(labels).values())
+        base = self._base()
+
+        if min_count >= 2:
+            cv = min(3, min_count)
+            method = "isotonic" if min_count >= 10 else "sigmoid"  # sigmoid is stabler on few pts
+            clf = CalibratedClassifierCV(base, method=method, cv=cv)
+            try:
+                clf.fit(x, labels)
+                self._clf = clf
+            except Exception as exc:  # any calibration quirk -> uncalibrated fallback
+                log.warning("calibration failed; using uncalibrated head",
+                            error=str(exc), min_count=min_count)
+                base = self._base()
+                base.fit(x, labels)
+                self._clf = base
+        else:
+            log.warning("too few samples/class to calibrate; using uncalibrated head",
+                        min_count=min_count)
+            base.fit(x, labels)
+            self._clf = base
+
         self._labels = list(self._clf.classes_)
         self._fitted = True
 
@@ -44,7 +89,7 @@ class NeuralThreatClassifier:
         if not self._fitted:
             raise RuntimeError("classifier must be fit before predict")
         x = np.asarray(embedding, dtype=np.float64).reshape(1, -1)
-        proba = self._clf.predict_proba(x)[0]
+        proba = self._model().predict_proba(x)[0]
         idx = int(np.argmax(proba))
         label = self._labels[idx]
         conf = float(proba[idx])
@@ -63,7 +108,7 @@ class NeuralThreatClassifier:
         """Per-class P/R/F1 + macro/weighted — used at the Sentinel phase gate (F1>=0.75)."""
         from sklearn.metrics import precision_recall_fscore_support
 
-        preds = [self._labels[int(np.argmax(p))] for p in self._clf.predict_proba(embeddings)]
+        preds = [self._labels[int(np.argmax(p))] for p in self._model().predict_proba(embeddings)]
         p, r, f1, _ = precision_recall_fscore_support(
             labels, preds, labels=self._labels, average="macro", zero_division=0
         )
