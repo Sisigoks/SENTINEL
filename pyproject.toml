@@ -18,7 +18,6 @@ dependencies = [
     "torch>=2.2",
     "vllm>=0.4.2",
     "transformers>=4.40",
-    "sentence-transformers>=2.6",
     "accelerate>=0.29",
     "pydantic>=2.6",
     "numpy>=1.26",

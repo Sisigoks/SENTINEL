@@ -106,7 +106,42 @@ For gated repos you must also accept the license on the model page.
 
 ---
 
-## 7. `trust_remote_code` required
+## 7. `Could not load libtorchcodec` / `libavutil.so... cannot open shared object file`
+
+```
+RuntimeError: Could not load libtorchcodec ...
+OSError: libavutil.so.60: cannot open shared object file: No such file or directory
+  ... from sentence_transformers import SentenceTransformer
+```
+
+**Cause.** Recent `sentence-transformers` imports `torchcodec` (audio/video modality), which
+needs FFmpeg native libs that Colab/minimal images lack. **SENTINEL no longer uses
+sentence-transformers** — the encoder ([src/sentinel/models/encoder.py](../src/sentinel/models/encoder.py))
+computes embeddings directly via `transformers`. If you hit this, you have an old build:
+```bash
+pip uninstall -y sentence-transformers torchcodec   # not needed by SENTINEL
+```
+(Re-run `scripts/colab_setup.sh`, which no longer installs sentence-transformers.)
+
+---
+
+## 8. Encoder CUDA OOM when sharing the GPU with the served LLM
+
+The vLLM engine reserves `gpu_memory_utilization` of VRAM (default 0.90) *first*; the frozen
+encoder then loads onto the same GPU. On small GPUs (e.g. 14.5 GB T4) little is left.
+SENTINEL loads the encoder in **fp16** and **auto-falls back to CPU** if the GPU load fails,
+so it won't crash. To keep it on GPU, leave headroom:
+```bash
+sentinel run model=qwen3_14b model.gpu_memory_utilization=0.70
+```
+Or force CPU encoding (the encoder is small; fine for the probe set):
+```bash
+sentinel run model=qwen3_14b encoder.device=cpu
+```
+
+---
+
+## 9. `trust_remote_code` required
 
 A few repos need custom modeling code. Set per-model:
 ```yaml

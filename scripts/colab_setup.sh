@@ -9,12 +9,13 @@ set -euo pipefail
 echo "==> Installing SENTINEL dependencies (this can take a few minutes)…"
 
 # Pin a compatible serving stack. vLLM 0.10.x pairs with transformers 4.53.x.
+# NOTE: we deliberately do NOT install sentence-transformers — recent versions import
+# torchcodec, whose native lib fails to load on Colab (missing libavutil/FFmpeg). SENTINEL
+# computes embeddings directly via transformers, so it is not needed.
 pip install -q \
   "vllm==0.10.0" \
   "transformers==4.53.3" \
-  "tokenizers>=0.19,<0.20" \
-  "sentence-transformers>=2.6" \
-  "hnswlib>=0.8"
+  "tokenizers>=0.19,<0.20"
 
 # SENTINEL's analysis / framework deps.
 pip install -q \
