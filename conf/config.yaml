@@ -1,0 +1,35 @@
+# SENTINEL top-level experiment config (Hydra/OmegaConf).
+defaults:
+  - model: qwen3_14b
+  - _self_
+
+seed: 0
+output_dir: experiments/runs
+log_level: INFO
+
+encoder:
+  model_name: intfloat/e5-large-v2
+  device: cuda
+  batch_size: 64
+
+corpus:
+  kind: builtin            # 'builtin' | 'jsonl'
+  jsonl_path: null
+  repeat: 8                # instances per class for the illustrative seed set
+  held_out_classes: []     # OWASP codes held out for cross-threat transfer (H3)
+
+experiment:
+  conditions: [vanilla, static_filter, reflection_defense, meta_defense, full_sentinel]
+  window: 12
+  seeds: [0, 1, 2]         # 3 seeds on the flagship condition (paper §5.2)
+  bootstrap: 10000
+  run_robustness: true
+  run_evolution: true
+  run_ablation: true
+
+evolution:
+  population_size: 12
+  offspring_per_gen: 8
+  generations: 15
+  bypass_trigger: 5
+  human_gate: policy       # 'policy' (pre-registered, logged) | 'interactive'

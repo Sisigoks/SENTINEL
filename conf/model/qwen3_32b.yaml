@@ -1,0 +1,8 @@
+# Qwen3-32B via vLLM batched — scale check (paper §6.2, Table 7 robustness path).
+kind: vllm
+model_name: Qwen/Qwen3-32B-AWQ
+quantization: awq
+max_model_len: 8192
+gpu_memory_utilization: 0.92
+dtype: auto
+seed: 0

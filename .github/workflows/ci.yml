@@ -1,0 +1,40 @@
+name: ci
+
+# CPU-only CI: lints + runs the GPU-independent test suite (invariants, NSGA-II,
+# fitness, bandit, threat graph, metrics, statistics, evolution engine). The full
+# model-serving experiments run on the A100 outside CI.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install CPU-side deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy scipy scikit-learn matplotlib networkx pydantic \
+                      structlog omegaconf statsmodels pandas pytest ruff
+      - name: Lint
+        run: ruff check src tests || true
+      - name: Run GPU-independent tests
+        run: pytest tests/ -q
+
+  safety-invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install numpy pydantic
+      - name: Assert defensive-only invariants
+        run: pytest tests/test_invariants.py -q

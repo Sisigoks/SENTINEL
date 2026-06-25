@@ -1,0 +1,8 @@
+# Qwen3-14B served via vLLM on the A100 (paper's recommended primary path, Table 7).
+kind: vllm
+model_name: Qwen/Qwen3-14B-AWQ
+quantization: awq
+max_model_len: 8192
+gpu_memory_utilization: 0.90
+dtype: auto
+seed: 0

@@ -1,0 +1,8 @@
+# DeepSeek-R1-Distill-14B via vLLM (paper §6.2 model family 2).
+kind: vllm
+model_name: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+quantization: awq
+max_model_len: 8192
+gpu_memory_utilization: 0.90
+dtype: auto
+seed: 0

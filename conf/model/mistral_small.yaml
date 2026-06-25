@@ -1,0 +1,8 @@
+# Mistral-Small via vLLM (paper §6.2 model family 3).
+kind: vllm
+model_name: mistralai/Mistral-Small-Instruct-2409
+quantization: awq
+max_model_len: 8192
+gpu_memory_utilization: 0.90
+dtype: auto
+seed: 0
