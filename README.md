@@ -87,8 +87,11 @@ to confirm the model loads before committing GPU hours.
 
 > **Figures and results come ONLY from real model runs.** There is no synthetic/CPU path
 > that fabricates graphs — `sentinel run` on the A100 measures ASR/recall/etc. from the actual
-> models and feeds them through the metric → stats → figure pipeline. Figures are written as
-> PNG (300 DPI) to `experiments/runs/<model>/figures/`.
+> models and feeds them through the metric → stats → figure pipeline. Each figure is written as
+> PNG (300 DPI) in **two variants** to `experiments/runs/<model>/figures/`: `<name>.png` (color)
+> and `<name>_bw.png` (grayscale, print-safe — series stay distinguishable by linestyle + marker).
+> Axes autoscale to the recorded values, and every defense condition gets a distinct marker so
+> curves that share an ASR value remain separable.
 
 ## Logic tests (no GPU, no fabricated data)
 

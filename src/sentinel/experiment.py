@@ -98,6 +98,7 @@ def run_all(
     final_asr_samples: dict[str, list[float]] = defaultdict(list)
     recall_by_cond: dict[str, float] = {}
 
+    retained_agent = None  # keep the full_sentinel graph for threat-behavior figures
     grid_bar = tqdm(total=len(conditions) * len(seeds), desc="adversarial grid",
                     unit="run", position=1, leave=False)
     for cond_name in conditions:
@@ -111,6 +112,8 @@ def run_all(
             aulc_samples[cond_name].append(run.asr_aulc)
             final_asr_samples[cond_name].append(run.final_asr)
             recall_by_cond[cond_name] = detection_recall(run.detection_true, run.detection_pred)
+            if cond_name == "full_sentinel" and seed == seeds[0]:
+                retained_agent = agent
             grid_bar.update(1)
             grid_bar.set_postfix(cond=cond_name, final_ASR=f"{run.final_asr:.2f}")
         # average curve across seeds (align to min length)
@@ -123,6 +126,21 @@ def run_all(
         }
     grid_bar.close()
     viz.plot_asr_curves(curves, fig_dir)
+
+    # threat-behavior figures from the real full_sentinel threat graph
+    if retained_agent is not None and retained_agent.graph.n_threats > 0:
+        from .metrics.catalog import attack_migration_matrix
+        g = retained_agent.graph
+        rec = g.recurrence()
+        if any(rec.values()):
+            viz.plot_recurrence(rec, fig_dir)
+            results["threat_recurrence"] = rec
+        n = len(corpus.seen())
+        nwin = min(5, max(n, 1))
+        dists = [g.class_distribution(int(i * n / nwin), int((i + 1) * n / nwin))
+                 for i in range(nwin)]
+        if any(dists):
+            viz.plot_migration_heatmap(attack_migration_matrix(dists), fig_dir)
     master.update(1)
 
     # ---- 2. evolution loop (human-gated) on FullSENTINEL ---------------
@@ -159,6 +177,8 @@ def run_all(
     # ---- 5. cross-threat transfer (leave-one-class-out) ----------------
     _phase("cross-threat transfer")
     results["cross_threat_transfer"] = _cross_threat_transfer(backend, encoder, corpus, window)
+    if results["cross_threat_transfer"]:
+        viz.plot_transfer_bars(results["cross_threat_transfer"], fig_dir)
     master.update(1)
 
     # ---- 6. utility + security-utility tradeoff ------------------------

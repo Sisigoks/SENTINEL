@@ -10,6 +10,7 @@ from .figures import (
     plot_security_utility_pareto,
     plot_signature_drift,
     plot_stability,
+    plot_transfer_bars,
     set_paper_style,
 )
 
@@ -24,4 +25,5 @@ __all__ = [
     "plot_signature_drift",
     "plot_stability",
     "plot_ablation",
+    "plot_transfer_bars",
 ]
