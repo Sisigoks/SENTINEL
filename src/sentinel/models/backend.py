@@ -79,9 +79,15 @@ class VLLMBackend(ModelBackend):
         trust_remote_code: bool = False,
         enforce_eager: bool = False,
         show_progress: bool = False,
+        use_flashinfer: bool = False,
     ) -> None:
-        from .compat import apply_model_compat_patches
+        from .compat import apply_model_compat_patches, configure_serving_env
 
+        # Disable the FlashInfer sampler by default: a FlashInfer wheel built for a newer
+        # CUDA than the driver crashes with cudaErrorInsufficientDriver(35) in its sampler
+        # kernel. vLLM falls back to the native PyTorch sampler (greedy decoding needs no
+        # FlashInfer). Set use_flashinfer=True to opt back in once your wheel matches CUDA.
+        configure_serving_env(use_flashinfer=use_flashinfer)
         apply_model_compat_patches()  # patch known tokenizer/version skews first
         from vllm import LLM  # imported lazily so non-GPU tooling can import the module
 
@@ -126,6 +132,11 @@ class VLLMBackend(ModelBackend):
         if "compute capability" in low or "not supported" in low:
             hints.append("This GPU may be pre-Ampere (CC<8.0); vLLM falls back to the V0 engine. "
                          "AWQ needs CC>=7.5. Prefer an A100/L4/H100 for the full grid.")
+        if "insufficientdriver" in low.replace(" ", "") or "flashinfer" in low or "driver version" in low:
+            hints.append("FlashInfer/CUDA-runtime vs driver mismatch (cudaErrorInsufficientDriver). "
+                         "SENTINEL disables the FlashInfer sampler by default; if it still appears, "
+                         "uninstall flashinfer entirely (scripts/setup_a100_cuda128.sh) — vLLM uses "
+                         "FlashAttention + the native sampler without it.")
         joined = "\n  - ".join(hints) if hints else "(no specific hint matched)"
         return f"vLLM failed to load {model_name!r}: {msg}\nLikely fixes:\n  - {joined}"
 
@@ -221,6 +232,7 @@ def build_backend(cfg: dict) -> ModelBackend:
             trust_remote_code=cfg.get("trust_remote_code", False),
             enforce_eager=cfg.get("enforce_eager", False),
             show_progress=cfg.get("show_progress", False),
+            use_flashinfer=cfg.get("use_flashinfer", False),
         )
     if kind == "openai_compat":
         return OpenAICompatBackend(

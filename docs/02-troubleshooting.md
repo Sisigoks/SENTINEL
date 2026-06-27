@@ -53,6 +53,43 @@ sentinel run model=qwen3_14b max_model_len=4096 \
 
 ---
 
+## 2b. `cudaErrorInsufficientDriver (35)` in FlashInfer (the big one on cloud A100s)
+
+```
+RuntimeError: CUDA Runtime Error: cudaErrorInsufficientDriver (35):
+CUDA driver version is insufficient for CUDA runtime version
+  ... flashinfer/sampling.py ... top_k_mask_logits()
+```
+
+**Cause.** The model loads fine; the crash is in **FlashInfer's sampler kernel**. A FlashInfer
+wheel compiled for a *newer* CUDA runtime than your driver/torch (commonly a CUDA-13 build on a
+CUDA-12.8 box) reports the driver as "insufficient" even when `nvidia-smi` shows a perfectly new
+driver (e.g. 570.x / CUDA 12.8 on an A100). **It is not your GPU, driver, vLLM, AWQ, or transformers.**
+
+**Fix (already applied in code).** SENTINEL sets `VLLM_USE_FLASHINFER_SAMPLER=0` before vLLM
+imports, so vLLM uses its native PyTorch sampler and never calls FlashInfer. SENTINEL decodes at
+temperature 0 (greedy), so this costs nothing. To re-enable FlashInfer once your wheel matches:
+```bash
+sentinel run model=qwen3_14b model.use_flashinfer=true
+```
+
+**Clean dependency resolution (recommended on the A100).** Remove the mismatched FlashInfer and
+install a consistent CUDA-12.8 stack:
+```bash
+bash scripts/setup_a100_cuda128.sh
+```
+This uninstalls all `flashinfer*` wheels, installs torch cu128 + vLLM 0.10.0 + transformers 4.53.3,
+and verifies `torch.version.cuda`. vLLM runs on the A100 with FlashAttention + the native sampler —
+FlashInfer is optional and not required.
+
+Diagnostics to confirm the mismatch:
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda)"   # expect 2.7.x / 12.8
+pip show flashinfer-python 2>/dev/null | grep -i version || echo "flashinfer not installed (good)"
+```
+
+---
+
 ## 3. GPU out-of-memory (OOM) / KV-cache errors
 
 ```

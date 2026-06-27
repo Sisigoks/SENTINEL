@@ -13,11 +13,30 @@ Currently handled:
 
 from __future__ import annotations
 
+import os
+
 from ..core.logging import get_logger
 
 log = get_logger(__name__)
 
 _APPLIED = False
+
+
+def configure_serving_env(use_flashinfer: bool = False) -> None:
+    """Set vLLM environment flags BEFORE vLLM is imported.
+
+    The dominant failure on cloud A100s is a FlashInfer wheel compiled for a newer CUDA
+    than the driver, which crashes in its sampler kernel with cudaErrorInsufficientDriver(35)
+    even though the driver itself is fine. We disable the FlashInfer sampler by default so
+    vLLM uses its native PyTorch sampler (greedy decoding needs nothing from FlashInfer).
+    Uses setdefault so an explicit user/env override always wins.
+    """
+    if not use_flashinfer:
+        os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+        # Some vLLM builds also probe FlashInfer for MoE / prefix kernels; keep them off too.
+        os.environ.setdefault("VLLM_USE_FLASHINFER_MOE_FP16", "0")
+        log.info("serving env: FlashInfer sampler disabled (native PyTorch sampler). "
+                 "Set use_flashinfer=true to re-enable once your wheel matches the CUDA driver.")
 
 
 def _patch_all_special_tokens_extended() -> None:

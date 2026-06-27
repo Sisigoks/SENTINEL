@@ -50,9 +50,23 @@ DeepSeek-R1-Distill-14B, Mistral-Small, Qwen3-32B) — no call-site changes.
 
 ### Install (GPU host)
 
+On a cloud **A100 / CUDA 12.8** box, use the setup script — it installs a consistent
+torch-cu128 + vLLM 0.10.0 + transformers 4.53.3 stack and removes mismatched FlashInfer
+wheels (the usual cause of `cudaErrorInsufficientDriver`):
+
 ```bash
-pip install -e ".[dev]"          # pulls torch, vllm, sentence-transformers, ...
+bash scripts/setup_a100_cuda128.sh
 ```
+
+Or install directly:
+
+```bash
+pip install -e .                 # pulls torch, vllm, transformers, ...
+```
+
+> SENTINEL disables the FlashInfer sampler by default (`VLLM_USE_FLASHINFER_SAMPLER=0`) so a
+> mismatched FlashInfer wheel can't crash the run — vLLM uses FlashAttention + the native
+> sampler. Re-enable with `model.use_flashinfer=true` once your wheel matches the driver.
 
 ### Google Colab / Lightning AI
 
