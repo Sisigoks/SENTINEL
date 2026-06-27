@@ -33,8 +33,9 @@ def fit_cascade(
     threat_texts = [p.text for p in seen]
     threat_labels = [p.threat_class.value for p in seen]
 
-    benign_emb = encoder.encode(benign_texts)
-    threat_emb = encoder.encode(threat_texts) if threat_texts else benign_emb[:1]
+    benign_emb = encoder.encode(benign_texts, progress=True, desc="fit: encode benign")
+    threat_emb = (encoder.encode(threat_texts, progress=True, desc="fit: encode threats")
+                  if threat_texts else benign_emb[:1])
 
     # anomaly screen on benign manifold
     anomaly = AnomalyScreen(random_state=seed)

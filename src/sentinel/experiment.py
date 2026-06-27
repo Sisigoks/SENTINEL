@@ -71,6 +71,35 @@ def _build_phase_list(cfg: dict) -> list[str]:
     return phases
 
 
+def _print_plan(backend, encoder, corpus, cfg, phases: list[str], out: Path) -> None:
+    """Upfront scope banner so the whole run is visible before the bars start."""
+    seeds = cfg["experiment"]["seeds"]
+    conds = cfg["experiment"]["conditions"]
+    n_probes = len(corpus.seen())
+    est_cycles = len(conds) * len(seeds) * n_probes
+    lines = [
+        f"model        : {backend.model_name}",
+        f"encoder      : {encoder.model_name}",
+        f"conditions   : {len(conds)}  ({', '.join(conds)})",
+        f"seeds        : {seeds}",
+        f"probes/run   : {n_probes}   -> grid cycles ~ {est_cycles:,}",
+        f"phases       : {' -> '.join(phases)}",
+        f"output       : {out}",
+        f"evolution={cfg['experiment'].get('run_evolution')}  "
+        f"ablation={cfg['experiment'].get('run_ablation')}  "
+        f"robustness={cfg['experiment'].get('run_robustness')}",
+    ]
+    # ASCII-only box so it never hits a non-UTF8 console encoding error.
+    width = max(len(s) for s in [*lines, "SENTINEL experiment plan"]) + 2
+    bar = "+" + "-" * width + "+"
+    print("\n" + bar)
+    print("| " + "SENTINEL experiment plan".ljust(width - 1) + "|")
+    print(bar)
+    for s in lines:
+        print("| " + s.ljust(width - 1) + "|")
+    print(bar + "\n")
+
+
 def run_all(
     backend: ModelBackend, encoder: FrozenEncoder, corpus: ProbeCorpus, cfg: dict, out_dir: str
 ) -> dict:
@@ -82,6 +111,7 @@ def run_all(
     results: dict = {"model": backend.model_name, "conditions": {}, "stats": {}}
 
     phases = _build_phase_list(cfg)
+    _print_plan(backend, encoder, corpus, cfg, phases, out)
     master = tqdm(total=len(phases), desc=f"SENTINEL | {backend.model_name}", unit="phase",
                   position=0, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} phases [{elapsed}]")
 

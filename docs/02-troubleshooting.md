@@ -76,7 +76,7 @@ sentinel run model=qwen3_14b model.use_flashinfer=true
 **Clean dependency resolution (recommended on the A100).** Remove the mismatched FlashInfer and
 install a consistent CUDA-12.8 stack:
 ```bash
-bash scripts/setup_a100_cuda128.sh
+bash scripts/setup.sh
 ```
 This uninstalls all `flashinfer*` wheels, installs torch cu128 + vLLM 0.10.0 + transformers 4.53.3,
 and verifies `torch.version.cuda`. vLLM runs on the A100 with FlashAttention + the native sampler —
@@ -158,7 +158,7 @@ computes embeddings directly via `transformers`. If you hit this, you have an ol
 ```bash
 pip uninstall -y sentence-transformers torchcodec   # not needed by SENTINEL
 ```
-(Re-run `scripts/colab_setup.sh`, which no longer installs sentence-transformers.)
+(Re-run `scripts/setup.sh`, which no longer installs sentence-transformers.)
 
 ---
 

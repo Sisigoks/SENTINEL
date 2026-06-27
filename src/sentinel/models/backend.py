@@ -135,7 +135,7 @@ class VLLMBackend(ModelBackend):
         if "insufficientdriver" in low.replace(" ", "") or "flashinfer" in low or "driver version" in low:
             hints.append("FlashInfer/CUDA-runtime vs driver mismatch (cudaErrorInsufficientDriver). "
                          "SENTINEL disables the FlashInfer sampler by default; if it still appears, "
-                         "uninstall flashinfer entirely (scripts/setup_a100_cuda128.sh) — vLLM uses "
+                         "uninstall flashinfer entirely (scripts/setup.sh) — vLLM uses "
                          "FlashAttention + the native sampler without it.")
         joined = "\n  - ".join(hints) if hints else "(no specific hint matched)"
         return f"vLLM failed to load {model_name!r}: {msg}\nLikely fixes:\n  - {joined}"

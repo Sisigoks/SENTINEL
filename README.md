@@ -48,37 +48,26 @@ No mock backends. Inference is real: in-process `vllm` serving of local quantize
 or an OpenAI-compatible endpoint. Model choice is a config switch (Qwen3-14B,
 DeepSeek-R1-Distill-14B, Mistral-Small, Qwen3-32B) — no call-site changes.
 
-### Install (GPU host)
+### Install (one script, every GPU and lab)
 
-On a cloud **A100 / CUDA 12.8** box, use the setup script — it installs a consistent
-torch-cu128 + vLLM 0.10.0 + transformers 4.53.3 stack and removes mismatched FlashInfer
-wheels (the usual cause of `cudaErrorInsufficientDriver`):
-
-```bash
-bash scripts/setup_a100_cuda128.sh
-```
-
-Or install directly:
+A single setup script works on any CUDA GPU (T4 / L4 / A100 / H100) and any environment
+(Colab, Lightning AI, Kaggle, bare cloud box). It lets vLLM resolve a matching torch +
+tokenizers, pins vLLM 0.10.0 + transformers 4.53.3, removes mismatched FlashInfer wheels
+(the usual cause of `cudaErrorInsufficientDriver`), and prints your GPU's compute capability.
 
 ```bash
-pip install -e .                 # pulls torch, vllm, transformers, ...
+bash scripts/setup.sh
+export HF_TOKEN=hf_xxx            # faster / gated downloads (Colab: %env HF_TOKEN=hf_xxx)
+sentinel run model=qwen3_14b
 ```
+
+(On Colab/Lightning prefix with `!`/`%env`.) The full grid wants an A100/L4/H100; a T4 works
+only for a smoke run. If a model fails to load, the error prints an actionable hint — see
+[docs/02-troubleshooting.md](docs/02-troubleshooting.md).
 
 > SENTINEL disables the FlashInfer sampler by default (`VLLM_USE_FLASHINFER_SAMPLER=0`) so a
 > mismatched FlashInfer wheel can't crash the run — vLLM uses FlashAttention + the native
 > sampler. Re-enable with `model.use_flashinfer=true` once your wheel matches the driver.
-
-### Google Colab / Lightning AI
-
-```bash
-!bash scripts/colab_setup.sh      # pins a vLLM<->transformers combo that avoids known crashes
-%env HF_TOKEN=hf_xxx              # faster / gated downloads
-!sentinel run model=qwen3_14b
-```
-
-`colab_setup.sh` installs a tested serving stack and prints your GPU's compute capability
-(the full grid needs an A100/L4/H100; a T4 works only for a smoke run). If a model fails to
-load, the error prints an actionable hint — see [docs/02-troubleshooting.md](docs/02-troubleshooting.md).
 
 ### Run the full study
 

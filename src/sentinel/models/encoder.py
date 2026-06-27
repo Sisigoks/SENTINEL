@@ -87,12 +87,19 @@ class FrozenEncoder:
             pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
         return pooled.float().cpu().numpy().astype(np.float32)
 
-    def encode(self, texts: list[str]) -> np.ndarray:
-        """Return an (n, dim) float32 array of normalized, mean-pooled embeddings."""
+    def encode(self, texts: list[str], progress: bool = False, desc: str = "encoding") -> np.ndarray:
+        """Return an (n, dim) float32 array of normalized, mean-pooled embeddings.
+
+        Set ``progress=True`` to show a tqdm bar over batches (useful when embedding a large
+        corpus during detector fitting); per-probe (size-1) calls leave it off."""
         if not texts:
             return np.zeros((0, self._dim), dtype=np.float32)
         out: list[np.ndarray] = []
-        for i in range(0, len(texts), self.batch_size):
+        rng = range(0, len(texts), self.batch_size)
+        if progress and len(texts) > self.batch_size:
+            from tqdm.auto import tqdm
+            rng = tqdm(rng, desc=desc, unit="batch", leave=False)
+        for i in rng:
             batch = texts[i : i + self.batch_size]
             try:
                 out.append(self._embed_batch(batch))
