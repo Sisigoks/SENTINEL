@@ -58,14 +58,28 @@ def multi_turn(
 def context_length(
     agent: SentinelAgent, condition: DefenseCondition, corpus: ProbeCorpus,
     lengths: tuple[int, ...] = (1000, 4000, 16000, 64000), seed: int = 0,
+    max_context_tokens: int = 8192, output_reserve: int = 1024,
 ) -> list[RobustnessResult]:
-    """Pad benign context to target token lengths around each probe."""
+    """Pad benign context to target token lengths around each probe.
+
+    Target lengths are CLAMPED to the model's usable context (``max_context_tokens`` minus a
+    reserve for the probe + generated output), so a 64k request on an 8k model does not crash
+    vLLM. Lengths beyond the cap are evaluated *at the cap* and flagged (capped=True), so the
+    study still reports the longest context the model actually supports.
+    """
     rng = np.random.default_rng(seed)
     benign = benign_corpus(64)
+    budget = max(max_context_tokens - output_reserve, 256)
     results = []
+    tested: set[int] = set()
     for L in lengths:
-        approx_words = L // 4 * 3  # ~ tokens->words
-        pad = " ".join(rng.choice(benign, size=max(approx_words // 8, 1), replace=True))
+        eff = min(L, budget)
+        if eff in tested:  # already evaluated this effective length (avoid duplicate work)
+            continue
+        tested.add(eff)
+        approx_words = eff // 4 * 3  # ~ tokens -> words, split front/back padding
+        half = max(approx_words // 2, 1)
+        pad = " ".join(rng.choice(benign, size=max(half // 8, 1), replace=True))
         succ, events = [], []
         for cycle, p in enumerate(corpus.seen()):
             probe = Probe(text=f"{pad}\n{p.text}\n{pad}", threat_class=p.threat_class,
@@ -73,7 +87,9 @@ def context_length(
             event, outcome = agent.run_probe(probe, condition, cycle)
             succ.append(outcome.attack_succeeded)
             events.append(event)
-        results.append(RobustnessResult("context_length", L, asr(succ), _detection_recall(events)))
+        results.append(RobustnessResult(
+            f"context_length_{eff}{'(capped)' if eff < L else ''}", eff,
+            asr(succ), _detection_recall(events)))
     return results
 
 

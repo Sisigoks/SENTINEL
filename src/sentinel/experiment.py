@@ -118,6 +118,13 @@ def run_all(
     def _phase(name: str) -> None:
         master.set_description(f"SENTINEL | {backend.model_name} | {name}")
 
+    def _dump() -> None:
+        # Persist partial results after every phase so a late crash never loses completed work.
+        try:
+            (out / "results.json").write_text(json.dumps(results, indent=2, default=str))
+        except Exception as exc:  # never let checkpointing kill the run
+            log.warning("partial results dump failed", error=str(exc))
+
     # ---- 1. adversarial grid over conditions x seeds --------------------
     _phase("adversarial grid")
     seeds = cfg["experiment"]["seeds"]
@@ -172,19 +179,19 @@ def run_all(
         if any(dists):
             viz.plot_migration_heatmap(attack_migration_matrix(dists), fig_dir)
     master.update(1)
-
+    _dump()
     # ---- 2. evolution loop (human-gated) on FullSENTINEL ---------------
     if cfg["experiment"].get("run_evolution"):
         _phase("defensive evolution")
         results["evolution"] = _run_evolution(backend, encoder, corpus, cfg, fig_dir)
         master.update(1)
-
+        _dump()
     # ---- 3. ablation ----------------------------------------------------
     if cfg["experiment"].get("run_ablation"):
         _phase("ablation")
         results["ablation"] = _run_ablation(backend, encoder, corpus, window, fig_dir)
         master.update(1)
-
+        _dump()
     # ---- 4. robustness --------------------------------------------------
     if cfg["experiment"].get("run_robustness"):
         _phase("robustness suite")
@@ -198,19 +205,22 @@ def run_all(
             if step == "multi_turn":
                 results["robustness"][step] = [r.__dict__ for r in multi_turn(agent, cond, corpus)]
             elif step == "context_length":
-                results["robustness"][step] = [r.__dict__ for r in context_length(agent, cond, corpus)]
+                max_ctx = int(cfg.get("model", {}).get("max_model_len", 8192))
+                results["robustness"][step] = [
+                    r.__dict__ for r in context_length(agent, cond, corpus, max_context_tokens=max_ctx)
+                ]
             else:
                 results["robustness"][step] = [r.__dict__ for r in channel_robustness(agent, cond, corpus)]
         rob_bar.close()
         master.update(1)
-
+        _dump()
     # ---- 5. cross-threat transfer (leave-one-class-out) ----------------
     _phase("cross-threat transfer")
     results["cross_threat_transfer"] = _cross_threat_transfer(backend, encoder, corpus, window)
     if results["cross_threat_transfer"]:
         viz.plot_transfer_bars(results["cross_threat_transfer"], fig_dir)
     master.update(1)
-
+    _dump()
     # ---- 6. utility + security-utility tradeoff ------------------------
     _phase("utility / tradeoff")
     util_points = {}
@@ -229,12 +239,12 @@ def run_all(
     util_loss = max(util_points["vanilla"][0] - util_points["full_sentinel"][0], 0.0)
     results["security_utility_tradeoff"] = security_utility_tradeoff(vanilla_asr - full_asr, util_loss)
     master.update(1)
-
+    _dump()
     # ---- 7. statistics --------------------------------------------------
     _phase("statistics")
     results["stats"] = _statistics(final_asr_samples, aulc_samples)
     master.update(1)
-
+    _dump()
     # ---- 8. figures + reproducibility manifest -------------------------
     _phase("figures + manifest")
     manifest = RunManifest(
@@ -245,32 +255,56 @@ def run_all(
     manifest.save(out / "manifest.json")
     (out / "results.json").write_text(json.dumps(results, indent=2, default=str))
     master.update(1)
+    _dump()
     master.close()
     log.info("experiment complete", out=str(out), figures=str(fig_dir))
     return results
 
 
+def _eval_subset(corpus: ProbeCorpus, n: int, seed: int = 0) -> ProbeCorpus:
+    """Balanced probe subsample for fast evolution-candidate evaluation.
+
+    Evolution evaluates many candidate genomes; running the full corpus per candidate is the
+    dominant cost (~10h). A small class-balanced subset gives a fast, low-variance fitness
+    signal for *ranking* candidates — the retained genome is still validated on the full grid.
+    """
+    rng = np.random.default_rng(seed)
+    seen = corpus.seen()
+    by_class: dict = defaultdict(list)
+    for p in seen:
+        by_class[p.threat_class].append(p)
+    per = max(1, n // max(len(by_class), 1))
+    chosen: list = []
+    for probes in by_class.values():
+        idx = rng.choice(len(probes), size=min(per, len(probes)), replace=False)
+        chosen.extend(probes[i] for i in idx)
+    return ProbeCorpus(probes=chosen, name="evolution_eval_subset")
+
+
 def _run_evolution(backend, encoder, corpus, cfg, fig_dir) -> dict:
+    # Build the agent ONCE (re-fitting the detector per candidate is wasteful); reuse its
+    # cascade across evaluations. Each candidate gets a fresh condition (clean bandit).
     agent = build_agent(backend, encoder, corpus, seed=0)
     full = build_condition("full_sentinel", _context_dim(agent))
     assert isinstance(full, FullSentinel)
+    eval_corpus = _eval_subset(corpus, int(cfg["evolution"].get("eval_probes", 24)))
+    log.info("evolution eval subset", n=len(eval_corpus.seen()), full_corpus=len(corpus.seen()))
 
     def evaluator(genome) -> FitnessVector:
-        # deploy this genome's strategies, run a short adversarial pass, measure
         from .core.types import DefenseStrategy
         from .eval.conditions import build_condition as bc
-        a = build_agent(backend, encoder, corpus, seed=0)
-        cond = bc("full_sentinel", _context_dim(a))
+        cond = bc("full_sentinel", _context_dim(agent))  # fresh bandit per candidate
         assert isinstance(cond, FullSentinel)
         cond.deploy_genome_strategies({DefenseStrategy(m.name) for m in genome.modules})
-        run = grids.run_adversarial(a, cond, corpus, model_name=backend.model_name, seed=0, window=12)
+        run = grids.run_adversarial(agent, cond, eval_corpus, model_name=backend.model_name,
+                                    seed=0, window=12, progress=False)
         recall = detection_recall(run.detection_true, run.detection_pred)
-        util = grids.run_clean(a, cond, CLEAN_TASKS, model_name=backend.model_name)
+        util = grids.run_clean(agent, cond, CLEAN_TASKS, model_name=backend.model_name)
+        n = max(len(eval_corpus.seen()), 1)
         return FitnessVector(
             asr=run.final_asr, recall=recall, precision=recall,
             fpr=0.0, utility_drop=max(0.0, 1.0 - util),
-            latency_s=run.latency_s / max(len(corpus.seen()), 1),
-            token_cost=run.tokens / max(len(corpus.seen()), 1),
+            latency_s=run.latency_s / n, token_cost=run.tokens / n,
         )
 
     gate = (InteractiveHumanGate() if cfg["evolution"]["human_gate"] == "interactive"

@@ -28,8 +28,9 @@ experiment:
   run_ablation: true
 
 evolution:
-  population_size: 12
-  offspring_per_gen: 8
-  generations: 15
+  population_size: 8
+  offspring_per_gen: 4
+  generations: 6           # evolution converges fast; each gen evaluates offspring_per_gen candidates
+  eval_probes: 24          # class-balanced subset per candidate (full grid still validates the winner)
   bypass_trigger: 5
   human_gate: policy       # 'policy' (pre-registered, logged) | 'interactive'
