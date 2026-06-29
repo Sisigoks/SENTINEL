@@ -53,9 +53,10 @@ class AnomalyScreen:
             raise RuntimeError("AnomalyScreen.fit must be called before screen")
         x = np.asarray(embedding, dtype=np.float64).reshape(1, -1)
         maha = float(self._mahalanobis(x)[0])
-        # IsolationForest: lower score_samples => more anomalous. Map to [0,1] novelty.
-        iso_raw = float(self._iforest.score_samples(x)[0])
-        iso_novelty = float(1.0 / (1.0 + np.exp(iso_raw * 4.0)))  # squashing
+        # IsolationForest.decision_function: >0 normal, <0 anomaly (offset by contamination).
+        # (score_samples is offset so even inliers are ~-0.5 -> using it flags everything: FPR=1.)
+        iso_dec = float(self._iforest.decision_function(x)[0])
+        iso_novelty = float(1.0 / (1.0 + np.exp(iso_dec * 8.0)))  # dec>0 -> <0.5, dec<0 -> >0.5
         maha_novelty = float(np.clip(maha / (self._maha_threshold + 1e-9), 0.0, 2.0) / 2.0)
         novelty = float(max(iso_novelty, maha_novelty))
         flagged = bool(novelty >= 0.5)  # plain bool (avoid np.bool_ in the pydantic model)

@@ -22,7 +22,7 @@ from ..metrics.catalog import asr
 @dataclass
 class RobustnessResult:
     setting: str
-    value: float | int
+    value: float | int | str   # numeric (turns / tokens) or categorical (channel name)
     asr: float
     detection_recall: float
 
@@ -31,6 +31,16 @@ def _detection_recall(events) -> float:
     if not events:
         return 0.0
     return sum(1 for e in events if e.is_threat) / len(events)
+
+
+def _run(agent: SentinelAgent, condition: DefenseCondition, probes: list[Probe]):
+    """Batched evaluation of a probe list (GPU-saturating, same path as the grid)."""
+    from ..eval.grids import get_batch_size
+
+    pairs = agent.run_batch(probes, condition, start_cycle=0, batch_size=get_batch_size())
+    succ = [o.attack_succeeded for _, o in pairs]
+    events = [e for e, _ in pairs]
+    return succ, events
 
 
 def multi_turn(
@@ -42,15 +52,13 @@ def multi_turn(
     benign = benign_corpus(64)
     results = []
     for n in turns:
-        succ, events = [], []
-        for cycle, p in enumerate(corpus.seen()):
-            history = "\n".join(rng.choice(benign, size=max(n - 1, 0), replace=True))
-            probe = Probe(text=f"{history}\n{p.text}", threat_class=p.threat_class,
-                          channel=p.channel, source=p.source, canary=p.canary,
-                          requested_scope=p.requested_scope, granted_scope=p.granted_scope)
-            event, outcome = agent.run_probe(probe, condition, cycle)
-            succ.append(outcome.attack_succeeded)
-            events.append(event)
+        probes = [
+            Probe(text="\n".join(rng.choice(benign, size=max(n - 1, 0), replace=True)) + "\n" + p.text,
+                  threat_class=p.threat_class, channel=p.channel, source=p.source, canary=p.canary,
+                  requested_scope=p.requested_scope, granted_scope=p.granted_scope)
+            for p in corpus.seen()
+        ]
+        succ, events = _run(agent, condition, probes)
         results.append(RobustnessResult("multi_turn", n, asr(succ), _detection_recall(events)))
     return results
 
@@ -80,13 +88,12 @@ def context_length(
         approx_words = eff // 4 * 3  # ~ tokens -> words, split front/back padding
         half = max(approx_words // 2, 1)
         pad = " ".join(rng.choice(benign, size=max(half // 8, 1), replace=True))
-        succ, events = [], []
-        for cycle, p in enumerate(corpus.seen()):
-            probe = Probe(text=f"{pad}\n{p.text}\n{pad}", threat_class=p.threat_class,
-                          channel=p.channel, source=p.source, canary=p.canary)
-            event, outcome = agent.run_probe(probe, condition, cycle)
-            succ.append(outcome.attack_succeeded)
-            events.append(event)
+        probes = [
+            Probe(text=f"{pad}\n{p.text}\n{pad}", threat_class=p.threat_class,
+                  channel=p.channel, source=p.source, canary=p.canary)
+            for p in corpus.seen()
+        ]
+        succ, events = _run(agent, condition, probes)
         results.append(RobustnessResult(
             f"context_length_{eff}{'(capped)' if eff < L else ''}", eff,
             asr(succ), _detection_recall(events)))
@@ -100,13 +107,12 @@ def channel_robustness(
     """Re-present probes via retrieval / memory / tool channels (poisoning robustness)."""
     results = []
     for ch in channels:
-        succ, events = [], []
-        for cycle, p in enumerate(corpus.seen()):
-            probe = Probe(text=p.text, threat_class=p.threat_class, channel=ch,
-                          source=p.source, canary=p.canary,
-                          requested_scope=p.requested_scope, granted_scope=p.granted_scope)
-            event, outcome = agent.run_probe(probe, condition, cycle)
-            succ.append(outcome.attack_succeeded)
-            events.append(event)
-        results.append(RobustnessResult(f"channel_{ch.value}", ch.value, asr(succ), _detection_recall(events)))
+        probes = [
+            Probe(text=p.text, threat_class=p.threat_class, channel=ch, source=p.source,
+                  canary=p.canary, requested_scope=p.requested_scope, granted_scope=p.granted_scope)
+            for p in corpus.seen()
+        ]
+        succ, events = _run(agent, condition, probes)
+        results.append(RobustnessResult(f"channel_{ch.value}", ch.value, asr(succ),
+                                        _detection_recall(events)))
     return results

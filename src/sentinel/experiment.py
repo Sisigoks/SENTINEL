@@ -231,7 +231,9 @@ def run_all(
             if step == "multi_turn":
                 results["robustness"][step] = [r.__dict__ for r in multi_turn(agent, cond, corpus)]
             elif step == "context_length":
-                max_ctx = int(cfg.get("model", {}).get("max_model_len", 8192))
+                from .models.autotune import resolve_serving
+                mm = cfg.get("model", {}).get("max_model_len", 8192)
+                max_ctx = int(resolve_serving({"max_model_len": mm})["max_model_len"])  # 'auto' -> int
                 results["robustness"][step] = [
                     r.__dict__ for r in context_length(agent, cond, corpus, max_context_tokens=max_ctx)
                 ]

@@ -48,6 +48,10 @@ def set_batch_size(n: int) -> None:
     _BATCH_SIZE = max(1, int(n))
 
 
+def get_batch_size() -> int:
+    return _BATCH_SIZE
+
+
 def run_adversarial(
     agent: SentinelAgent,
     condition: DefenseCondition,
