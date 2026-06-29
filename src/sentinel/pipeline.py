@@ -56,11 +56,24 @@ def fit_cascade(
     return SentinelCascade(encoder, RuleScreen(), anomaly, clf, sig)
 
 
+# Generation length dominates GPU time. The success oracle reads refusal/compliance markers
+# that appear early, and clean-task answers are short, so a tight cap roughly halves runtime
+# with no measurable effect on ASR. run_all() sets this from cfg["solve"]["max_tokens"].
+_SOLVE_MAX_TOKENS = 256
+
+
+def set_solve_max_tokens(n: int) -> None:
+    global _SOLVE_MAX_TOKENS
+    _SOLVE_MAX_TOKENS = max(1, int(n))
+
+
 def build_agent(
     backend: ModelBackend, encoder: FrozenEncoder, corpus: ProbeCorpus, *, seed: int = 0
 ) -> SentinelAgent:
+    from .models.backend import GenerationConfig
     from .substrate.fgae import ReferenceFGAE
 
     cascade = fit_cascade(encoder, corpus, seed=seed)
     graph = ThreatGraph()
-    return SentinelAgent(ReferenceFGAE(backend), cascade, graph)
+    solve_cfg = GenerationConfig(max_tokens=_SOLVE_MAX_TOKENS, temperature=0.0)
+    return SentinelAgent(ReferenceFGAE(backend), cascade, graph, solve_cfg=solve_cfg)

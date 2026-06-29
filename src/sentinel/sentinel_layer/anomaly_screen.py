@@ -55,10 +55,10 @@ class AnomalyScreen:
         maha = float(self._mahalanobis(x)[0])
         # IsolationForest: lower score_samples => more anomalous. Map to [0,1] novelty.
         iso_raw = float(self._iforest.score_samples(x)[0])
-        iso_novelty = 1.0 / (1.0 + np.exp(iso_raw * 4.0))  # squashing
+        iso_novelty = float(1.0 / (1.0 + np.exp(iso_raw * 4.0)))  # squashing
         maha_novelty = float(np.clip(maha / (self._maha_threshold + 1e-9), 0.0, 2.0) / 2.0)
-        novelty = max(iso_novelty, maha_novelty)
-        flagged = novelty >= 0.5
+        novelty = float(max(iso_novelty, maha_novelty))
+        flagged = bool(novelty >= 0.5)  # plain bool (avoid np.bool_ in the pydantic model)
         return StageResult(
             stage=CascadeStage.ANOMALY,
             flagged=flagged,
