@@ -29,16 +29,55 @@ log = get_logger(__name__)
 _CONDITION_ORDER = ["vanilla", "static_filter", "reflection_defense", "meta_defense", "full_sentinel"]
 
 
+def _merge_model_results(parts: list[dict]) -> dict:
+    """Merge several results.json for the SAME model (e.g. seed-shards from run-parallel):
+    concatenate per-condition samples and recompute means; keep richest detection/extras."""
+    if len(parts) == 1:
+        return parts[0]
+    merged = dict(parts[0])
+    merged_conds: dict[str, dict] = {}
+    cond_names = {c for p in parts for c in p.get("conditions", {})}
+    for cond in cond_names:
+        fa: list[float] = []
+        au: list[float] = []
+        recall = []
+        for p in parts:
+            c = p.get("conditions", {}).get(cond)
+            if not c:
+                continue
+            fa += c.get("final_asr_samples", [c.get("final_asr_mean")] if "final_asr_mean" in c else [])
+            au += c.get("asr_aulc_samples", [c.get("asr_aulc_mean")] if "asr_aulc_mean" in c else [])
+            if "detection_recall" in c:
+                recall.append(c["detection_recall"])
+        merged_conds[cond] = {
+            "final_asr_mean": float(np.mean(fa)) if fa else float("nan"),
+            "asr_aulc_mean": float(np.mean(au)) if au else float("nan"),
+            "final_asr_samples": fa,
+            "asr_aulc_samples": au,
+            "detection_recall": float(np.mean(recall)) if recall else None,
+        }
+    merged["conditions"] = merged_conds
+    # prefer a part that actually computed detection / evolution
+    for key in ("detection", "evolution", "ablation", "cross_threat_transfer"):
+        for p in parts:
+            if p.get(key):
+                merged[key] = p[key]
+                break
+    return merged
+
+
 def load_runs(runs_dir: str | Path) -> dict[str, dict]:
-    runs: dict[str, dict] = {}
-    for d in sorted(Path(runs_dir).iterdir()):
-        f = d / "results.json"
-        if f.is_file():
-            try:
-                runs[d.name] = json.loads(f.read_text())
-            except Exception as exc:  # skip a half-written file
-                log.warning("skip unreadable results", path=str(f), error=str(exc))
-    return runs
+    """Recursively load every results.json and group by the model field, merging shards."""
+    by_model: dict[str, list[dict]] = {}
+    for f in sorted(Path(runs_dir).rglob("results.json")):
+        try:
+            res = json.loads(f.read_text())
+        except Exception as exc:  # skip a half-written file
+            log.warning("skip unreadable results", path=str(f), error=str(exc))
+            continue
+        model = res.get("model", f.parent.name)
+        by_model.setdefault(model, []).append(res)
+    return {m: _merge_model_results(parts) for m, parts in by_model.items()}
 
 
 def aggregate(runs_dir: str | Path, out_dir: str | Path) -> dict:

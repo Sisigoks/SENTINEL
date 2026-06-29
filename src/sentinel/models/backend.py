@@ -53,6 +53,13 @@ class ModelBackend(ABC):
         """Default chat formatting; backends may override with a tokenizer template."""
         return self.generate(f"<|system|>\n{system}\n<|user|>\n{user}\n<|assistant|>\n", cfg)
 
+    def chat_batch(
+        self, items: list[tuple[str, str]], cfg: GenerationConfig
+    ) -> list[Generation]:
+        """Batched chat — the throughput path that saturates the GPU. ``items`` is a list of
+        (system, user) pairs; the default loops, real backends submit one batched request."""
+        return [self.chat(s, u, cfg) for s, u in items]
+
 
 class VLLMBackend(ModelBackend):
     """In-process vLLM engine. Loads local (optionally quantized) weights and serves batched.
@@ -170,14 +177,25 @@ class VLLMBackend(ModelBackend):
             )
         return results
 
-    def chat(self, system: str, user: str, cfg: GenerationConfig) -> Generation:
+    def _template(self, system: str, user: str) -> str:
         tok = self._llm.get_tokenizer()
-        prompt = tok.apply_chat_template(
+        return tok.apply_chat_template(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
             tokenize=False,
             add_generation_prompt=True,
         )
-        return self.generate(prompt, cfg)
+
+    def chat(self, system: str, user: str, cfg: GenerationConfig) -> Generation:
+        return self.generate(self._template(system, user), cfg)
+
+    def chat_batch(
+        self, items: list[tuple[str, str]], cfg: GenerationConfig
+    ) -> list[Generation]:
+        # Submit ALL prompts in one vLLM call so its continuous batching saturates the GPU.
+        if not items:
+            return []
+        prompts = [self._template(s, u) for s, u in items]
+        return self.generate_batch(prompts, cfg)
 
 
 class OpenAICompatBackend(ModelBackend):
@@ -221,6 +239,9 @@ def build_backend(cfg: dict) -> ModelBackend:
     """Factory used by the config system. ``cfg['kind']`` selects the backend."""
     kind = cfg.get("kind", "vllm")
     if kind == "vllm":
+        from .autotune import resolve_serving
+
+        cfg = resolve_serving(cfg)  # turn 'auto' max_model_len / gpu_memory_utilization into numbers
         return VLLMBackend(
             model_name=cfg["model_name"],
             quantization=cfg.get("quantization", None),

@@ -13,14 +13,20 @@ def test_detect_gpus_is_nonnegative():
     assert detect_gpus() >= 0  # 0 on a CPU box, N on a GPU host
 
 
-def test_build_jobs_fills_gpus():
+def test_build_jobs_shards_to_fill_gpus():
     models = ["qwen3_14b", "deepseek_r1_distill_14b", "mistral_small", "qwen3_32b"]
-    jobs = build_jobs(models, "conf/config_b200.yaml", "conf/config_b200_evo.yaml")
-    assert len(jobs) == 8  # 4 flagship + 4 evo -> fills 8 B200s
+    # 8 GPUs, 4 models, seeds [0,1,2] -> replicas=2 -> 8 jobs (fills 8 GPUs)
+    jobs = build_jobs(models, "conf/config.yaml", n_gpus=8, runs_dir="experiments/runs")
+    assert len(jobs) == 8
     assert {j.model for j in jobs} == set(models)
-    # without evo config -> one job per model
-    assert len(build_jobs(models, "conf/config_b200.yaml", None)) == 4
-    assert len(build_jobs(models, "conf/config_b200.yaml", "none")) == 4
+    # first shard of each model runs evolution; later shards are grid-only
+    def evo_off(j):
+        return any("run_evolution=false" in o for o in j.overrides)
+    first = [j for j in jobs if not evo_off(j)]
+    later = [j for j in jobs if evo_off(j)]
+    assert len(first) == 4 and len(later) == 4
+    # 4 GPUs, 4 models -> one job per model (replicas=1)
+    assert len(build_jobs(models, "conf/config.yaml", n_gpus=4, runs_dir="x")) == 4
 
 
 def _fake_run(model: str, asr_by_cond: dict[str, list[float]]) -> dict:
@@ -53,9 +59,23 @@ def test_aggregate_two_way_anova(tmp_path: Path):
     assert set(loaded) == {"Qwen", "DeepSeek"}
 
     agg = aggregate(runs, tmp_path / "agg")
-    assert agg["models"] == ["DeepSeek", "Qwen"] or set(agg["models"]) == {"Qwen", "DeepSeek"}
+    assert set(agg["models"]) == {"Qwen", "DeepSeek"}
     assert "two_way_anova" in agg, agg.get("note")
     cond_term = [k for k in agg["two_way_anova"] if "B" in k and ":" not in k][0]
     assert agg["two_way_anova"][cond_term]["p"] < 0.01  # condition strongly significant
     assert "full_sentinel" in agg["effect_vs_vanilla_pooled"]
     assert (tmp_path / "agg" / "aggregate_results.json").exists()
+
+
+def test_load_runs_merges_seed_shards(tmp_path: Path):
+    # two shard dirs for the SAME model (different seeds) must merge into one model entry
+    runs = tmp_path / "runs"
+    (runs / "_shard0" / "Qwen").mkdir(parents=True)
+    (runs / "_shard1" / "Qwen").mkdir(parents=True)
+    (runs / "_shard0" / "Qwen" / "results.json").write_text(
+        json.dumps(_fake_run("Qwen", {"vanilla": [0.6, 0.58]})))
+    (runs / "_shard1" / "Qwen" / "results.json").write_text(
+        json.dumps(_fake_run("Qwen", {"vanilla": [0.62]})))
+    merged = load_runs(runs)
+    assert set(merged) == {"Qwen"}
+    assert len(merged["Qwen"]["conditions"]["vanilla"]["final_asr_samples"]) == 3  # 2 + 1 seeds

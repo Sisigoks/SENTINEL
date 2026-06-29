@@ -1,11 +1,10 @@
-# Qwen3-14B-AWQ served via vLLM (paper's recommended primary path, Table 7).
-# quantization is left unset so vLLM auto-detects AWQ from the model's config.json —
-# this avoids the "model is not AWQ" class of crashes (see docs/02-troubleshooting.md).
+# Qwen3-14B-AWQ via vLLM. `auto` fields are resolved from the detected GPU (models/autotune.py):
+# quantization auto-detected from config.json; max_model_len / gpu_memory_utilization scaled to VRAM.
 kind: vllm
 model_name: Qwen/Qwen3-14B-AWQ
-quantization: null        # auto-detect (config.json declares AWQ)
-max_model_len: 8192
-gpu_memory_utilization: 0.90
+quantization: null
+max_model_len: auto
+gpu_memory_utilization: auto
 dtype: auto
 tokenizer_mode: auto
 trust_remote_code: false

@@ -110,6 +110,20 @@ def run_all(
 
     results: dict = {"model": backend.model_name, "conditions": {}, "stats": {}}
 
+    # generation-length cap (cost lever) — applied to every agent built below
+    from .pipeline import set_solve_max_tokens
+    set_solve_max_tokens(int(cfg.get("solve", {}).get("max_tokens", 256)))
+
+    # GPU-saturating batch size: 'auto' scales it to the detected VRAM (T4 -> B200)
+    from .eval.grids import set_batch_size
+    from .models.autotune import autotune_batch_size, autotune_summary, gpu_profile
+    bs_cfg = cfg.get("solve", {}).get("batch_size", "auto")
+    batch_size = (autotune_batch_size(gpu_profile()["vram_gb"]) if str(bs_cfg) == "auto"
+                  else int(bs_cfg))
+    set_batch_size(batch_size)
+    log.info("hardware autotune", summary=autotune_summary(), batch_size=batch_size)
+    results["hardware"] = {"autotune": autotune_summary(), "batch_size": batch_size}
+
     phases = _build_phase_list(cfg)
     _print_plan(backend, encoder, corpus, cfg, phases, out)
     master = tqdm(total=len(phases), desc=f"SENTINEL | {backend.model_name}", unit="phase",

@@ -69,12 +69,20 @@ only for a smoke run. If a model fails to load, the error prints an actionable h
 > mismatched FlashInfer wheel can't crash the run — vLLM uses FlashAttention + the native
 > sampler. Re-enable with `model.use_flashinfer=true` once your wheel matches the driver.
 
-### Run the full study
+### Run the full study (one adaptive config, any GPU)
+
+There is a single config — `conf/config.yaml`. It **auto-tunes to the GPU** (batch size, serving
+params scale from T4 to B200) and **auto-detects GPU count**:
 
 ```bash
-sentinel run --config conf/config.yaml model=qwen3_14b
-sentinel run-all-models          # three families + Qwen3-32B scale check
+sentinel run                     # one GPU, saturated via batched inference
+sentinel run-parallel            # detects ALL GPUs, shards across them, then aggregates
+sentinel aggregate               # cross-model two-way ANOVA + figures from completed runs
 ```
+
+`run-parallel` shards the four model families (and their seeds) to fill every GPU; see
+[docs/03-multi-gpu-runbook.md](docs/03-multi-gpu-runbook.md). Trim for free tier with overrides:
+`sentinel run 'experiment.seeds=[0,1]' corpus.repeat=5 experiment.run_robustness=false`.
 
 This runs the adversarial grid (5 conditions × seeds), the human-gated evolution loop,
 ablations, the robustness suite (multi-turn / context-length / channel poisoning),

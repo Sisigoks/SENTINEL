@@ -33,6 +33,12 @@ class FGAESubstrate(ABC):
     @abstractmethod
     def solve(self, system_prompt: str, task: str, cfg: GenerationConfig) -> TaskResult: ...
 
+    def solve_batch(
+        self, items: list[tuple[str, str]], cfg: GenerationConfig
+    ) -> list[TaskResult]:
+        """Batched solve — (system, task) pairs. Default loops; override to batch on GPU."""
+        return [self.solve(s, t, cfg) for s, t in items]
+
 
 class ReferenceFGAE(FGAESubstrate):
     """Reference substrate: a single deterministic LLM solve via the model backend.
@@ -53,3 +59,9 @@ class ReferenceFGAE(FGAESubstrate):
             prompt_tokens=gen.prompt_tokens,
             completion_tokens=gen.completion_tokens,
         )
+
+    def solve_batch(
+        self, items: list[tuple[str, str]], cfg: GenerationConfig
+    ) -> list[TaskResult]:
+        gens = self.backend.chat_batch(items, cfg)
+        return [TaskResult(g.text, g.prompt_tokens, g.completion_tokens) for g in gens]

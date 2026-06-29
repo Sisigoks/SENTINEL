@@ -37,6 +37,17 @@ class ConditionRun:
     tokens: int = 0
 
 
+# Generation batch size — how many probes' LLM solves are submitted to vLLM at once. Larger
+# = higher GPU utilization. Auto-tuned from the GPU at run start (see models.autotune); set via
+# set_batch_size(). Online-learning conditions update their bandit per chunk (valid mini-batch).
+_BATCH_SIZE = 16
+
+
+def set_batch_size(n: int) -> None:
+    global _BATCH_SIZE
+    _BATCH_SIZE = max(1, int(n))
+
+
 def run_adversarial(
     agent: SentinelAgent,
     condition: DefenseCondition,
@@ -48,43 +59,43 @@ def run_adversarial(
     shuffle: bool = True,
     progress: bool = True,
     progress_position: int = 1,
+    batch_size: int | None = None,
 ) -> ConditionRun:
-    """Stream probes through the condition, recording windowed ASR (the learning curve)."""
+    """Stream probes through the condition in GPU-saturating batches, recording windowed ASR."""
+    bs = batch_size or _BATCH_SIZE
     rng = np.random.default_rng(seed)
     probes = corpus.seen()
     order = rng.permutation(len(probes)) if shuffle else np.arange(len(probes))
+    ordered = [probes[int(i)] for i in order]
 
     run = ConditionRun(condition=condition.name, model=model_name, seed=seed)
     t0 = time.time()
-    window_succ: list[bool] = []
     bar = tqdm(
-        enumerate(order), total=len(order), disable=not progress, leave=False,
+        total=len(ordered), disable=not progress, leave=False,
         position=progress_position, desc=f"  ↳ {condition.name} seed={seed}", unit="probe",
     )
-    for cycle, i in bar:
-        probe = probes[i]
-        event, outcome = agent.run_probe(probe, condition, cycle)
-        run.per_probe_success.append(outcome.attack_succeeded)
-        run.detection_pred.append(event.is_threat)
-        run.detection_true.append(True)  # every probe is a real attack
-        run.tokens += outcome.tokens
-        window_succ.append(outcome.attack_succeeded)
-        # live running ASR + detection so you can watch hardening happen
+    for start in range(0, len(ordered), bs):
+        chunk = ordered[start : start + bs]
+        pairs = agent.run_batch(chunk, condition, start_cycle=start, batch_size=bs)
+        for event, outcome in pairs:
+            run.per_probe_success.append(outcome.attack_succeeded)
+            run.detection_pred.append(event.is_threat)
+            run.detection_true.append(True)  # every probe is a real attack
+            run.tokens += outcome.tokens
+        bar.update(len(chunk))
         running_asr = asr(run.per_probe_success)
         running_rec = sum(run.detection_pred) / max(len(run.detection_pred), 1)
         bar.set_postfix(ASR=f"{running_asr:.2f}", recall=f"{running_rec:.2f}", refresh=False)
-        if len(window_succ) >= window:
-            run.asr_curve.append(asr(window_succ))
-            window_succ = []
     bar.close()
-    if window_succ:
-        run.asr_curve.append(asr(window_succ))
 
-    run.final_asr = asr(run.per_probe_success[-window:]) if run.per_probe_success else 0.0
+    # windowed ASR learning curve from the ordered per-probe outcomes
+    succ = run.per_probe_success
+    run.asr_curve = [asr(succ[w : w + window]) for w in range(0, len(succ), window)] or [0.0]
+    run.final_asr = asr(succ[-window:]) if succ else 0.0
     run.asr_aulc = asr_aulc(run.asr_curve)
     run.latency_s = time.time() - t0
     log.info("adversarial run", condition=condition.name, model=model_name,
-             final_asr=run.final_asr, aulc=run.asr_aulc)
+             final_asr=run.final_asr, aulc=run.asr_aulc, batch_size=bs)
     return run
 
 

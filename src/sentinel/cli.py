@@ -79,7 +79,6 @@ def cmd_run_parallel(args: argparse.Namespace) -> int:
     run_parallel(
         models=models,
         config=args.config,
-        evo_config=None if args.no_evo else args.evo_config,
         gpus=args.gpus,
         runs_dir=args.runs_dir,
         aggregate=not args.no_aggregate,
@@ -114,11 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     pa.set_defaults(func=cmd_run_all_models)
 
     pp = sub.add_parser("run-parallel",
-                        help="auto-detect all GPUs and fan model runs across them, then aggregate")
-    pp.add_argument("--config", default="conf/config_b200.yaml", help="flagship config")
-    pp.add_argument("--evo-config", default="conf/config_b200_evo.yaml",
-                    help="evolution+ablation config run on spare GPUs")
-    pp.add_argument("--no-evo", action="store_true", help="skip the evolution/ablation jobs")
+                        help="auto-detect all GPUs and shard model runs across them, then aggregate")
+    pp.add_argument("--config", default="conf/config.yaml", help="the single adaptive config")
     pp.add_argument("--models", default="", help="comma-separated model configs (default: 4 families)")
     pp.add_argument("--gpus", type=int, default=None, help="override auto-detected GPU count")
     pp.add_argument("--runs-dir", default="experiments/runs")

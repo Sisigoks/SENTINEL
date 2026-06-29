@@ -1,11 +1,10 @@
-# DeepSeek-R1-Distill-Qwen-14B via vLLM (paper §6.2 model family 2).
-# The official repo is FP16 (no AWQ) — fits a 40GB A100. To use a quantized variant,
-# point model_name at a community AWQ repo; quantization stays null (auto-detect).
+# DeepSeek-R1-Distill-Qwen-14B via vLLM (FP16; point at an AWQ repo to fit smaller GPUs).
+# `auto` serving fields resolved from the detected GPU (models/autotune.py).
 kind: vllm
 model_name: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
-quantization: null        # FP16 by default; auto-detects if an AWQ/GPTQ repo is used
-max_model_len: 8192
-gpu_memory_utilization: 0.90
+quantization: null
+max_model_len: auto
+gpu_memory_utilization: auto
 dtype: auto
 tokenizer_mode: auto
 trust_remote_code: false

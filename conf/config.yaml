@@ -1,4 +1,15 @@
-# SENTINEL top-level experiment config (Hydra/OmegaConf).
+# SENTINEL — THE single config. Adapts to any GPU automatically.
+#
+#   * Serving (max_model_len, gpu_memory_utilization) is resolved from the detected GPU
+#     (see the model configs' `auto` values + models/autotune.py).
+#   * `solve.batch_size: auto` scales the generation batch to the GPU's VRAM, so one GPU is
+#     saturated whether it's a T4 or a B200 (the LLM solve is submitted to vLLM in big batches).
+#   * `sentinel run-parallel` auto-detects the GPU COUNT and shards this same config across all
+#     of them (seed-shards merged at aggregation).
+#
+# Single GPU:     sentinel run
+# All GPUs:       sentinel run-parallel
+# Free-tier trim: sentinel run 'experiment.seeds=[0,1]' corpus.repeat=5 experiment.run_robustness=false
 defaults:
   - model: qwen3_14b
   - _self_
@@ -10,27 +21,31 @@ log_level: INFO
 encoder:
   model_name: intfloat/e5-large-v2
   device: cuda
-  batch_size: 64
+  batch_size: 128
 
 corpus:
   kind: builtin            # 'builtin' | 'jsonl'
   jsonl_path: null
-  repeat: 8                # instances per class for the illustrative seed set
+  repeat: 6                # instances per class (60-72 probes); raise for the final run
   held_out_classes: []     # OWASP codes held out for cross-threat transfer (H3)
+
+solve:
+  max_tokens: 160          # generation cap — main cost lever (oracle reads the start of the reply)
+  batch_size: auto         # auto-scales to GPU VRAM (T4=8 ... B200=192); or set an int
 
 experiment:
   conditions: [vanilla, static_filter, reflection_defense, meta_defense, full_sentinel]
-  window: 12
-  seeds: [0, 1, 2]         # 3 seeds on the flagship condition (paper §5.2)
+  window: 10
+  seeds: [0, 1, 2]         # 3 seeds -> ANOVA / significance
   bootstrap: 10000
-  run_robustness: true
   run_evolution: true
   run_ablation: true
+  run_robustness: true     # batched now; set false to trim on small free-tier GPUs
 
 evolution:
   population_size: 8
   offspring_per_gen: 4
-  generations: 6           # evolution converges fast; each gen evaluates offspring_per_gen candidates
-  eval_probes: 24          # class-balanced subset per candidate (full grid still validates the winner)
+  generations: 6
+  eval_probes: 24          # class-balanced subset per candidate (full grid validates the winner)
   bypass_trigger: 5
   human_gate: policy       # 'policy' (pre-registered, logged) | 'interactive'
