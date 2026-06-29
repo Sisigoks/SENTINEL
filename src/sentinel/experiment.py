@@ -160,9 +160,21 @@ def run_all(
             "asr_aulc_mean": float(np.mean(aulc_samples[cond_name])),
             "final_asr_mean": float(np.mean(final_asr_samples[cond_name])),
             "detection_recall": recall_by_cond[cond_name],
+            # raw per-seed samples enable the cross-model two-way ANOVA in `sentinel aggregate`
+            "final_asr_samples": list(map(float, final_asr_samples[cond_name])),
+            "asr_aulc_samples": list(map(float, aulc_samples[cond_name])),
         }
     grid_bar.close()
     viz.plot_asr_curves(curves, fig_dir)
+
+    # detector quality: recall + FPR + per-class P/R/F1 (Tier-1 metrics the grid can't see).
+    det_agent = retained_agent if retained_agent is not None else build_agent(
+        backend, encoder, corpus, seed=0)
+    from .eval.detection import evaluate_detection
+    results["detection"] = evaluate_detection(det_agent.cascade, corpus)
+    log.info("detection eval", recall=results["detection"]["detection_recall"],
+             fpr=results["detection"]["false_positive_rate"],
+             macro_f1=results["detection"]["macro_f1"])
 
     # threat-behavior figures from the real full_sentinel threat graph
     if retained_agent is not None and retained_agent.graph.n_threats > 0:

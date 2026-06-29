@@ -1,0 +1,44 @@
+# SENTINEL — WARM-UP config. Run this FIRST (before your timed window) to pre-download
+# weights and build the vLLM torch.compile cache on every GPU. A trivial 1-probe grid per
+# model triggers the full load path; the real run then skips download + compile (~3 min saved
+# per process). Caches persist on disk (~/.cache/huggingface, ~/.cache/vllm).
+#
+#   sentinel run-parallel --config conf/config_warmup.yaml --no-evo
+defaults:
+  - model: qwen3_14b
+  - _self_
+
+seed: 0
+output_dir: experiments/_warmup
+log_level: INFO
+
+encoder:
+  model_name: intfloat/e5-large-v2
+  device: cuda
+  batch_size: 64
+
+corpus:
+  kind: builtin
+  jsonl_path: null
+  repeat: 1                # 12 probes, just enough to exercise load + first generate
+  held_out_classes: []
+
+solve:
+  max_tokens: 8            # warm-up only — outputs are discarded
+
+experiment:
+  conditions: [vanilla]    # one condition = fastest path through the grid
+  window: 6
+  seeds: [0]
+  bootstrap: 10000
+  run_evolution: false
+  run_ablation: false
+  run_robustness: false
+
+evolution:
+  population_size: 4
+  offspring_per_gen: 2
+  generations: 1
+  eval_probes: 6
+  bypass_trigger: 5
+  human_gate: policy

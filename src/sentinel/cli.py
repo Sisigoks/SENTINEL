@@ -72,6 +72,34 @@ def cmd_run_all_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run_parallel(args: argparse.Namespace) -> int:
+    configure_logging("INFO")
+    from .launcher import DEFAULT_MODELS, run_parallel
+    models = args.models.split(",") if args.models else DEFAULT_MODELS
+    run_parallel(
+        models=models,
+        config=args.config,
+        evo_config=None if args.no_evo else args.evo_config,
+        gpus=args.gpus,
+        runs_dir=args.runs_dir,
+        aggregate=not args.no_aggregate,
+    )
+    return 0
+
+
+def cmd_aggregate(args: argparse.Namespace) -> int:
+    configure_logging("INFO")
+    from .aggregate import aggregate
+    agg = aggregate(args.runs_dir, args.out)
+    print(f"[ok] aggregated {len(agg.get('models', []))} models -> {args.out}/aggregate_results.json")
+    if "two_way_anova" in agg:
+        for term, st_ in agg["two_way_anova"].items():
+            print(f"  ANOVA {term}: F={st_['F']:.2f} p={st_['p']:.4g} eta^2={st_['eta_sq']:.3f}")
+    elif "note" in agg:
+        print("  " + agg["note"])
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="sentinel", description="SENTINEL defensive-security experiments")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -84,6 +112,23 @@ def main(argv: list[str] | None = None) -> int:
     pa = sub.add_parser("run-all-models", help="sweep all model families + scale check")
     pa.add_argument("--config", default="conf/config.yaml")
     pa.set_defaults(func=cmd_run_all_models)
+
+    pp = sub.add_parser("run-parallel",
+                        help="auto-detect all GPUs and fan model runs across them, then aggregate")
+    pp.add_argument("--config", default="conf/config_b200.yaml", help="flagship config")
+    pp.add_argument("--evo-config", default="conf/config_b200_evo.yaml",
+                    help="evolution+ablation config run on spare GPUs")
+    pp.add_argument("--no-evo", action="store_true", help="skip the evolution/ablation jobs")
+    pp.add_argument("--models", default="", help="comma-separated model configs (default: 4 families)")
+    pp.add_argument("--gpus", type=int, default=None, help="override auto-detected GPU count")
+    pp.add_argument("--runs-dir", default="experiments/runs")
+    pp.add_argument("--no-aggregate", action="store_true")
+    pp.set_defaults(func=cmd_run_parallel)
+
+    pg = sub.add_parser("aggregate", help="cross-model two-way ANOVA + figures from completed runs")
+    pg.add_argument("--runs-dir", default="experiments/runs")
+    pg.add_argument("--out", default="experiments/aggregate")
+    pg.set_defaults(func=cmd_aggregate)
 
     args = p.parse_args(argv)
     return args.func(args)
