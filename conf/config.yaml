@@ -11,7 +11,7 @@
 # All GPUs:       sentinel run-parallel
 # Free-tier trim: sentinel run 'experiment.seeds=[0,1]' corpus.repeat=5 experiment.run_robustness=false
 defaults:
-  - model: qwen3_14b
+  - model: llama3_1_8b
   - _self_
 
 seed: 0

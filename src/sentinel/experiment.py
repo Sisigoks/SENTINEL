@@ -204,6 +204,10 @@ def run_all(
                  for i in range(nwin)]
         if any(dists):
             viz.plot_migration_heatmap(attack_migration_matrix(dists), fig_dir)
+        drift = g.signature_drift_series()
+        if drift:
+            viz.plot_signature_drift(drift, fig_dir)
+            results["signature_drift"] = drift
     master.update(1)
     _dump()
     # ---- 2. evolution loop (human-gated) on FullSENTINEL ---------------

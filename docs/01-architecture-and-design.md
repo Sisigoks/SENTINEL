@@ -277,7 +277,7 @@ risk row 3). **Rejected:** scalar weighted sum as the *selection* signal (G7).
 ## 4. Experimental & statistical framework
 
 - **Conditions (paper Table 8):** Vanilla, Static Filter, Reflection-Defense, Meta-Defense, Full SENTINEL — each adds exactly one mechanism so pairwise diffs attribute protection.
-- **Grid:** 5 defenses × 3 models × 10 threat classes × 60 probes (+ Qwen3-32B scale check; 3 seeds on flagship). Clean grid reuses GSM8K/MATH-500/HumanEval/MBPP/HotpotQA for utility retention.
+- **Grid:** 5 defenses × 6 models × 10 threat classes × 60 probes, 3 seeds. The roster spans five vendor lineages (Meta, Microsoft, DeepSeek, Mistral, Alibaba), a within-family scale axis (Llama-3.1-8B ↔ Llama-3.3-70B), and a reasoning-vs-instruct contrast at matched 14B scale (Phi-4 ↔ R1-Distill-Qwen-14B). Clean grid reuses GSM8K/MATH-500/HumanEval/MBPP/HotpotQA for utility retention.
 - **Metrics (4 dimensions):** Security effectiveness (ASR, ASR-AULC flagship, time-to-hardening, recall, FPR, P/R/F1/macro/weighted); Threat behavior (migration KL + matrix, recurrence curves, signature drift cosine/euclid + cluster evolution, Shannon diversity, novelty via Mahalanobis/IsolationForest); Defense evolution (security fitness, defense efficiency, stability index, convergence rate, leave-one-out module utility, reuse ratio, cross-threat transfer); Utility (security-utility tradeoff, clean-task accuracy).
 - **Robustness:** seen/unseen/zero-day, paraphrase (≥100 variants/attack), multi-turn (2/5/10/20), context length (1k–64k), retrieval poisoning, memory poisoning, tool abuse (param injection / scope escalation / chaining) — all in sandbox.
 - **Ablations:** Full → −Evolution → −Meta-Defense → −Threat-Graph → −Signatures → −Classifier → rule-only → neural-only.
@@ -314,8 +314,8 @@ SENTINEL/
 (structured logging), `asyncio` (pipeline), numpy/scipy/statsmodels/pingouin (stats),
 scikit-learn (IsolationForest, calibration), sentence-transformers (frozen encoder),
 hnswlib/FAISS (ANN), networkx (+SQLite/Kùzu adapter), matplotlib (figures), pytest + CI, Docker.
-**Model-agnostic:** swapping Qwen3-14B ↔ DeepSeek ↔ Mistral ↔ Qwen3-32B is a *config* change only;
-a `MockBackend` lets the entire pipeline + tests run with **no GPU**.
+**Model-agnostic:** swapping any of the six roster models (Llama-3.1-8B ↔ Phi-4 ↔ DeepSeek-R1-Distill ↔ Mistral-Small-24B ↔ Qwen3-32B ↔ Llama-3.3-70B) is a *config* change only;
+there is deliberately **no mock backend** — the GPU-independent logic is covered by the unit suite instead.
 
 ---
 
@@ -345,7 +345,7 @@ Each phase ends with **self-critique (reviewer mode)** per the brief.
 - **"FGAE substrate is doing the work, not Sentinel."** → ablation `−Sentinel`/`−classifier`/`rule-only` isolates the security layer's marginal contribution.
 - **"Bandit/evolution are over-engineered for 10 classes."** → ablations `−Meta-Defense`/`−Evolution` quantify whether they earn their complexity; if null, publish as the paper's pre-committed diagnostic finding.
 - **"Single annotator / no human-gate realism."** → log every gate decision with rationale; report inter-gate consistency.
-- **"Cross-model claim is weak with 3 models."** → two-way ANOVA model×condition + Qwen3-32B scale check + cross-model transfer matrix.
+- **"Cross-model claim is weak with few models."** → six models over five vendor lineages, two-way ANOVA model×condition, a within-family scale contrast (Llama 8B↔70B) separating scale from family, a matched-scale reasoning contrast (Phi-4 ↔ R1-distill), + cross-model transfer matrix.
 
 ---
 

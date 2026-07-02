@@ -51,7 +51,7 @@ class SignatureExtractor:
         anomaly_detail: dict,
         granted_scope: set[str] | None = None,
         requested_scope: set[str] | None = None,
-    ) -> StageResult:
+    ) -> tuple[StageResult, BehavioralSignature]:
         granted_scope = granted_scope or set()
         requested_scope = requested_scope or set()
         untrusted = channel in {

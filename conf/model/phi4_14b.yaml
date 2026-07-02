@@ -1,0 +1,14 @@
+# Phi-4 (14B, MIT, ungated) via vLLM — Microsoft's synthetic-data-heavy, safety-focused
+# post-training lineage. Scale-matched to deepseek_r1_distill_14b: standard instruct vs
+# reasoning-distilled at the SAME 14B size, so the reasoning contrast is not confounded
+# with scale. FP16 ~29GB -> needs an L40S/A100-40GB or larger; point at an AWQ repo for
+# smaller cards. `auto` serving fields resolved from the detected GPU (models/autotune.py).
+kind: vllm
+model_name: microsoft/phi-4
+quantization: null
+max_model_len: auto
+gpu_memory_utilization: auto
+dtype: auto
+tokenizer_mode: auto
+trust_remote_code: false
+seed: 0

@@ -14,7 +14,7 @@ def test_detect_gpus_is_nonnegative():
 
 
 def test_build_jobs_shards_to_fill_gpus():
-    models = ["qwen3_14b", "deepseek_r1_distill_14b", "mistral_small", "qwen3_32b"]
+    models = ["llama3_1_8b", "phi4_14b", "mistral_small_24b", "qwen3_32b"]
     # 8 GPUs, 4 models, seeds [0,1,2] -> replicas=2 -> 8 jobs (fills 8 GPUs)
     jobs = build_jobs(models, "conf/config.yaml", n_gpus=8, runs_dir="experiments/runs")
     assert len(jobs) == 8

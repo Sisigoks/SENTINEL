@@ -90,11 +90,11 @@ cat <<'EOF'
 
 Set a token for faster/gated downloads, then run:
     export HF_TOKEN=hf_xxx
-    sentinel run model=qwen3_14b          # one model
-    sentinel run-all-models               # all families + Qwen3-32B scale check
+    sentinel run model=llama3_1_8b        # one model (8B — cheapest)
+    sentinel run-all-models               # six-model roster (5 lineages + 8B->70B scale axis)
 
 Cheap end-to-end smoke test first (any GPU):
-    sentinel run model=qwen3_14b max_model_len=4096 'experiment.seeds=[0]' corpus.repeat=2 \
+    sentinel run model=llama3_1_8b max_model_len=4096 'experiment.seeds=[0]' corpus.repeat=2 \
       experiment.run_robustness=false experiment.run_evolution=false experiment.run_ablation=false
 
 Troubleshooting: docs/02-troubleshooting.md

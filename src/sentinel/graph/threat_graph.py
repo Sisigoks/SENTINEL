@@ -110,6 +110,33 @@ class ThreatGraph:
                 c[data["owasp"]] += 1
         return dict(c)
 
+    def signature_drift_series(self, n_epochs: int = 4) -> dict[str, list[float]]:
+        """Per-class behavioral drift over time: cosine distance between the mean
+        signature of consecutive epochs (cycle-ordered). Feeds the drift figure."""
+        from ..metrics.catalog import signature_drift
+
+        if not self._sig_matrix:
+            return {}
+        d = min(v.shape[0] for v in self._sig_matrix)
+        by_class: dict[str, list[tuple[int, np.ndarray]]] = defaultdict(list)
+        for tid, vec in zip(self._sig_ids, self._sig_matrix, strict=True):
+            data = self.g.nodes[tid]
+            by_class[data["owasp"]].append((int(data.get("cycle", 0)), vec[:d]))
+        out: dict[str, list[float]] = {}
+        for cls, items in by_class.items():
+            items.sort(key=lambda t: t[0])
+            vecs = [v for _, v in items]
+            if len(vecs) < 2 * 2:  # need >= 2 epochs of >= 2 samples
+                continue
+            k = min(n_epochs, len(vecs) // 2)
+            splits = np.array_split(np.vstack(vecs), k)
+            means = [s.mean(axis=0) for s in splits if len(s)]
+            drifts = [signature_drift(a, b)["cosine_distance"]
+                      for a, b in zip(means[:-1], means[1:], strict=False)]
+            if drifts:
+                out[cls] = drifts
+        return out
+
     def defense_reuse(self) -> dict[str, int]:
         """How many distinct threat classes each defense has defeated (reuse ratio input)."""
         reuse: dict[str, set[str]] = defaultdict(set)

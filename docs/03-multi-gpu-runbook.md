@@ -28,9 +28,9 @@ sentinel run                      # full study on one GPU, auto batch size
 ```bash
 sentinel run-parallel             # detects N GPUs, shards across all of them, then aggregates
 ```
-With the 4 model families and seeds `[0,1,2]`:
-- **8 GPUs** → `replicas = 8//4 = 2` → each model split into 2 seed-shards → **8 jobs, all GPUs busy**.
-- **4 GPUs** → one model per GPU.
+With the six-model roster and seeds `[0,1,2]`:
+- **12 GPUs** → `replicas = 12//6 = 2` → each model split into 2 seed-shards → **12 jobs, all GPUs busy**.
+- **6 GPUs** → one model per GPU.
 - **2 GPUs** → 4 jobs, 2 at a time (queued).
 
 Each model's first shard also runs evolution + ablation; later shards are grid-only. Shards

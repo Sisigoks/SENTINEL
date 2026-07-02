@@ -1,8 +1,8 @@
 """SENTINEL command-line entrypoint.
 
 Usage (on the A100):
-    sentinel run --config conf/config.yaml model=qwen3_14b
-    sentinel run-all-models            # sweep the three families + 32B scale check
+    sentinel run --config conf/config.yaml model=llama3_1_8b
+    sentinel run-all-models            # sweep all six models (five families + scale axis)
 
 Loads config via OmegaConf, builds the vLLM backend + frozen encoder, assembles the
 corpus, and runs the full experiment driver.
@@ -34,7 +34,7 @@ def _load_cfg(path: str, overrides: list[str]):
         model_cfg = OmegaConf.load(Path(path).parent / "model" / f"{model_name}.yaml")
         cfg.model = model_cfg
     elif "model" not in cfg or OmegaConf.is_missing(cfg, "model"):
-        cfg.model = OmegaConf.load(Path(path).parent / "model" / "qwen3_14b.yaml")
+        cfg.model = OmegaConf.load(Path(path).parent / "model" / "llama3_1_8b.yaml")
     cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist([o for o in overrides if not o.startswith("model=")]))
     return cfg
 
@@ -65,7 +65,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_run_all_models(args: argparse.Namespace) -> int:
-    for model in ["qwen3_14b", "deepseek_r1_distill_14b", "mistral_small", "qwen3_32b"]:
+    from .launcher import DEFAULT_MODELS
+    for model in DEFAULT_MODELS:
         log.info("running model family", model=model)
         ns = argparse.Namespace(config=args.config, overrides=[f"model={model}"])
         cmd_run(ns)
@@ -105,7 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 
     pr = sub.add_parser("run", help="run the full experiment for one model")
     pr.add_argument("--config", default="conf/config.yaml")
-    pr.add_argument("overrides", nargs="*", help="OmegaConf dotlist overrides, e.g. model=mistral_small seed=1")
+    pr.add_argument("overrides", nargs="*",
+                    help="OmegaConf dotlist overrides, e.g. model=mistral_small_24b seed=1")
     pr.set_defaults(func=cmd_run)
 
     pa = sub.add_parser("run-all-models", help="sweep all model families + scale check")
@@ -115,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     pp = sub.add_parser("run-parallel",
                         help="auto-detect all GPUs and shard model runs across them, then aggregate")
     pp.add_argument("--config", default="conf/config.yaml", help="the single adaptive config")
-    pp.add_argument("--models", default="", help="comma-separated model configs (default: 4 families)")
+    pp.add_argument("--models", default="",
+                    help="comma-separated model configs (default: the six-model roster)")
     pp.add_argument("--gpus", type=int, default=None, help="override auto-detected GPU count")
     pp.add_argument("--runs-dir", default="experiments/runs")
     pp.add_argument("--no-aggregate", action="store_true")

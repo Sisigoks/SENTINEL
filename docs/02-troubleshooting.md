@@ -47,7 +47,7 @@ newer than the vLLM build expects.
 
 To sanity-check on a small GPU, shrink the run:
 ```bash
-sentinel run model=qwen3_14b max_model_len=4096 \
+sentinel run model=llama3_1_8b max_model_len=4096 \
   'experiment.seeds=[0]' corpus.repeat=2 experiment.run_evolution=false
 ```
 
@@ -70,7 +70,7 @@ driver (e.g. 570.x / CUDA 12.8 on an A100). **It is not your GPU, driver, vLLM, 
 imports, so vLLM uses its native PyTorch sampler and never calls FlashInfer. SENTINEL decodes at
 temperature 0 (greedy), so this costs nothing. To re-enable FlashInfer once your wheel matches:
 ```bash
-sentinel run model=qwen3_14b model.use_flashinfer=true
+sentinel run model=llama3_1_8b model.use_flashinfer=true
 ```
 
 **Clean dependency resolution (recommended on the A100).** Remove the mismatched FlashInfer and
@@ -99,7 +99,7 @@ torch.OutOfMemoryError: CUDA out of memory
 
 Lower memory pressure in the model config or via overrides:
 ```bash
-sentinel run model=qwen3_14b max_model_len=4096 model.gpu_memory_utilization=0.80
+sentinel run model=llama3_1_8b max_model_len=4096 model.gpu_memory_utilization=0.80
 ```
 - Drop `max_model_len` (8192 → 4096 → 2048).
 - Drop `gpu_memory_utilization` (0.90 → 0.80).
@@ -125,7 +125,7 @@ Some Mistral repos ship only Mistral's native tokenizer. Set in the model config
 ```yaml
 tokenizer_mode: mistral
 ```
-The provided [conf/model/mistral_small.yaml](../conf/model/mistral_small.yaml) uses the
+The provided [conf/model/mistral_small_24b.yaml](../conf/model/mistral_small_24b.yaml) uses the
 HF-format repo (`tokenizer_mode: auto`), which avoids this.
 
 ---
@@ -169,11 +169,11 @@ encoder then loads onto the same GPU. On small GPUs (e.g. 14.5 GB T4) little is 
 SENTINEL loads the encoder in **fp16** and **auto-falls back to CPU** if the GPU load fails,
 so it won't crash. To keep it on GPU, leave headroom:
 ```bash
-sentinel run model=qwen3_14b model.gpu_memory_utilization=0.70
+sentinel run model=llama3_1_8b model.gpu_memory_utilization=0.70
 ```
 Or force CPU encoding (the encoder is small; fine for the probe set):
 ```bash
-sentinel run model=qwen3_14b encoder.device=cpu
+sentinel run model=llama3_1_8b encoder.device=cpu
 ```
 
 ---
@@ -210,7 +210,7 @@ Only enable this for repos you trust.
 ## Quick smoke run (verify the whole pipeline end-to-end, cheaply)
 
 ```bash
-sentinel run model=qwen3_14b \
+sentinel run model=llama3_1_8b \
   max_model_len=4096 \
   'experiment.seeds=[0]' \
   corpus.repeat=2 \

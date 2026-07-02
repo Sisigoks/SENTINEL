@@ -1,0 +1,15 @@
+# Mistral-Small-24B-Instruct-2501 (Mistral Small 3, Apache-2.0, HF-format) via vLLM.
+# Replaces the 22B 2409 release: bigger and a full generation newer, keeping the Mistral
+# alignment lineage in the grid. Text-only and standard HF weights (deliberately NOT the
+# multimodal 3.1/3.2 releases, which need mistral-format loading flags). FP16 ~48GB ->
+# needs an A100/H100-80GB; use an AWQ repo for smaller cards. Set tokenizer_mode=mistral
+# only for native-tokenizer repos. `auto` fields resolved from the GPU (models/autotune.py).
+kind: vllm
+model_name: mistralai/Mistral-Small-24B-Instruct-2501
+quantization: null
+max_model_len: auto
+gpu_memory_utilization: auto
+dtype: auto
+tokenizer_mode: auto
+trust_remote_code: false
+seed: 0

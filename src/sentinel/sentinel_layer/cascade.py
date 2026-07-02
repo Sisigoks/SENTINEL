@@ -81,10 +81,13 @@ class SentinelCascade:
             if self._on(CascadeStage.ANOMALY):
                 stage_results.append(anom_res)
 
-            # Early benign exit: nothing structural and in-distribution
+            # Early benign exit: nothing structural and in-distribution. A disabled stage
+            # contributes no evidence, so the exit requires at least one enabled screen —
+            # otherwise (e.g. the neural_only ablation) everything proceeds to Stage 3.
             rule_clear = (not rule_res.flagged) or (not self._on(CascadeStage.RULE))
             anom_clear = (not anom_res.flagged) or (not self._on(CascadeStage.ANOMALY))
-            if rule_clear and anom_clear:
+            screens_on = self._on(CascadeStage.RULE) or self._on(CascadeStage.ANOMALY)
+            if screens_on and rule_clear and anom_clear:
                 return ThreatEvent(
                     event_id=event_id,
                     channel=channel,
@@ -105,13 +108,19 @@ class SentinelCascade:
                 confidence = clf_res.score
                 if label != "BENIGN":
                     threat_class = ThreatClass(label)
-                # below tau_low and unflagged structurally -> treat benign
-                if confidence < self.tau_low and not rule_res.flagged and label == "BENIGN":
-                    return ThreatEvent(
-                        event_id=event_id, channel=channel, raw_text=text, is_threat=False,
-                        confidence=confidence, stage_results=stage_results,
-                        provenance_hash=ThreatEvent.hash_text(text),
-                    )
+                else:
+                    # classifier disagrees with the upstream flag; express confidence as
+                    # THREAT probability so downstream thresholds read consistently
+                    confidence = 1.0 - confidence
+                    rule_flagged = self._on(CascadeStage.RULE) and rule_res.flagged
+                    # confidently benign (threat prob < tau_low) with no structural flag
+                    # -> trust the classifier (FPR control); uncertain stays fail-closed
+                    if confidence < self.tau_low and not rule_flagged:
+                        return ThreatEvent(
+                            event_id=event_id, channel=channel, raw_text=text, is_threat=False,
+                            confidence=confidence, stage_results=stage_results,
+                            provenance_hash=ThreatEvent.hash_text(text),
+                        )
 
             # Stage 4 — signature
             sig: BehavioralSignature | None = None

@@ -1,0 +1,14 @@
+# Llama-3.1-8B-Instruct (AWQ INT4) via vLLM — the low-scale anchor and default smoke model.
+# Pairs with llama3_3_70b for the WITHIN-FAMILY scale axis (8B -> 70B, same pretraining
+# lineage), isolating scale effects from family effects. Fits a T4; any CUDA GPU works.
+# Official FP16 repo: meta-llama/Llama-3.1-8B-Instruct (gated — accept the Meta license
+# and set HF_TOKEN). `auto` serving fields resolved from the detected GPU (models/autotune.py).
+kind: vllm
+model_name: hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4
+quantization: null
+max_model_len: auto
+gpu_memory_utilization: auto
+dtype: auto
+tokenizer_mode: auto
+trust_remote_code: false
+seed: 0

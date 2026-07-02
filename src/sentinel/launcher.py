@@ -4,20 +4,20 @@ vLLM owns one GPU per process, so the parallelism model is *one process per GPU*
 detects ``torch.cuda.device_count()`` and runs that many concurrent workers; each pins
 ``CUDA_VISIBLE_DEVICES`` to a physical GPU and pulls jobs from a shared queue.
 
-To use ALL GPUs with a single config and the four model families, it **shards seeds**:
+To use ALL GPUs with a single config and the six-model roster, it **shards seeds**:
 
     replicas = clamp(n_gpus // n_models, 1, n_seeds)
 
 Each (model, seed-shard) pair is a job. The first shard of each model also runs the
 evolution + ablation phases (the rest are grid-only, to avoid duplicating that work). Shards
 write to ``<runs_dir>/_shard<k>/`` and are merged by model at aggregation time (results.json
-carries the model name), so 4 models x 2 shards fills 8 GPUs and still yields per-model
+carries the model name), so 6 models x 2 shards fills 12 GPUs and still yields per-model
 multi-seed statistics + the cross-model two-way ANOVA.
 
 Examples:
-    8 GPUs, 4 models, seeds [0,1,2] -> replicas=2 -> 8 jobs, all GPUs busy.
-    4 GPUs, 4 models                -> replicas=1 -> 4 jobs, one model per GPU.
-    2 GPUs, 4 models                -> replicas=1 -> 4 jobs, 2 at a time (queued).
+    12 GPUs, 6 models, seeds [0,1,2] -> replicas=2 -> 12 jobs, all GPUs busy.
+    6 GPUs,  6 models                -> replicas=1 -> 6 jobs, one model per GPU.
+    2 GPUs,  6 models                -> replicas=1 -> 6 jobs, 2 at a time (queued).
 """
 
 from __future__ import annotations
@@ -35,7 +35,18 @@ from .core.logging import get_logger
 
 log = get_logger(__name__)
 
-DEFAULT_MODELS = ["qwen3_14b", "deepseek_r1_distill_14b", "mistral_small", "qwen3_32b"]
+# The six-model study roster (paper §6.2): five vendor lineages (Meta, Microsoft, DeepSeek,
+# Mistral, Alibaba), a within-family scale axis (Llama 8B -> 70B), and a reasoning-vs-instruct
+# contrast at matched 14B scale (phi-4 vs R1-distill). Ordered smallest -> largest so
+# sequential sweeps fail fast on cheap models before committing to the 70B.
+DEFAULT_MODELS = [
+    "llama3_1_8b",
+    "phi4_14b",
+    "deepseek_r1_distill_14b",
+    "mistral_small_24b",
+    "qwen3_32b",
+    "llama3_3_70b",
+]
 
 
 def detect_gpus() -> int:

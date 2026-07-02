@@ -45,8 +45,23 @@ and per-class programmatic ASR oracles with canary tokens.
 ## Real models only (A100 / vLLM)
 
 No mock backends. Inference is real: in-process `vllm` serving of local quantized weights,
-or an OpenAI-compatible endpoint. Model choice is a config switch (Qwen3-14B,
-DeepSeek-R1-Distill-14B, Mistral-Small, Qwen3-32B) — no call-site changes.
+or an OpenAI-compatible endpoint. Model choice is a config switch — no call-site changes.
+
+The six-model roster is designed as a factorial study, not a grab-bag:
+
+| Config | Model | Size | Axis it contributes |
+|---|---|---|---|
+| `llama3_1_8b` | Llama-3.1-8B-Instruct (AWQ) | 8B | low-scale anchor; Meta lineage |
+| `phi4_14b` | Phi-4 | 14B | instruct-vs-reasoning contrast at matched scale; Microsoft lineage |
+| `deepseek_r1_distill_14b` | DeepSeek-R1-Distill-Qwen-14B | 14B | reasoning-distilled, scale-matched to Phi-4 |
+| `mistral_small_24b` | Mistral-Small-24B-Instruct-2501 | 24B | Mistral alignment lineage |
+| `qwen3_32b` | Qwen3-32B-AWQ | 32B | hybrid-reasoning flagship; Alibaba lineage |
+| `llama3_3_70b` | Llama-3.3-70B-Instruct (AWQ) | 70B | within-family scale axis vs the 8B; frontier check |
+
+Five vendor lineages test the model-agnostic claim; the Llama 8B↔70B pair isolates scale
+from family; the Phi-4 ↔ R1-distill pair isolates reasoning post-training from scale.
+Llama repos are gated (accept the Meta license, set `HF_TOKEN`); Phi-4 (MIT) and
+Mistral (Apache-2.0) are open.
 
 ### Install (one script, every GPU and lab)
 
@@ -58,7 +73,7 @@ tokenizers, pins vLLM 0.10.0 + transformers 4.53.3, removes mismatched FlashInfe
 ```bash
 bash scripts/setup.sh
 export HF_TOKEN=hf_xxx            # faster / gated downloads (Colab: %env HF_TOKEN=hf_xxx)
-sentinel run model=qwen3_14b
+sentinel run model=llama3_1_8b
 ```
 
 (On Colab/Lightning prefix with `!`/`%env`.) The full grid wants an A100/L4/H100; a T4 works
@@ -80,7 +95,7 @@ sentinel run-parallel            # detects ALL GPUs, shards across them, then ag
 sentinel aggregate               # cross-model two-way ANOVA + figures from completed runs
 ```
 
-`run-parallel` shards the four model families (and their seeds) to fill every GPU; see
+`run-parallel` shards the six-model roster (and their seeds) to fill every GPU; see
 [docs/03-multi-gpu-runbook.md](docs/03-multi-gpu-runbook.md). Trim for free tier with overrides:
 `sentinel run 'experiment.seeds=[0,1]' corpus.repeat=5 experiment.run_robustness=false`.
 
@@ -138,7 +153,7 @@ src/sentinel/
   core/ models/ substrate/ sentinel_layer/ graph/ meta_defense/
   defenses/ evolution/ corpora/ eval/ metrics/ stats/ viz/
 tests/       GPU-independent test suite (incl. safety invariants)
-experiments/ runner + figure validation harness
+experiments/ run outputs (runs/, aggregate/ — created at runtime)
 ```
 
 ## License
